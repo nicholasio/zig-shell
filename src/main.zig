@@ -25,9 +25,12 @@ const Command = struct {
     description: []const u8,
     // handler: fn (runner: *Runner, input: *InputCommand) i32,
 
-    pub fn execute(self: Command, runner: *const Runner, input: *const InputCommand) void {
+    pub fn execute(self: Command, runner: *const Runner, input: *const InputCommand) !void {
         if (std.mem.eql(u8, self.name, "exit")) {
             return exitHandler(runner, input);
+        }
+        if (std.mem.eql(u8, self.name, "echo")) {
+            return echoHandler(runner, input);
         }
     }
 };
@@ -42,14 +45,16 @@ const Runner = struct {
         for (self.commands) |cmd| {
             if (std.mem.eql(u8, command.*.name, cmd.name)) {
                 found = true;
-                cmd.execute(self, command);
+                try cmd.execute(self, command);
                 break;
             }
         }
 
-        // print the error message
-        const stdout = std.io.getStdOut().writer();
-        try stdout.print("{s}: command not found \n", .{command.*.name});
+        if (!found) {
+            // print the error message
+            const stdout = std.io.getStdOut().writer();
+            try stdout.print("{s}: command not found \n", .{command.*.name});
+        }
     }
 };
 
@@ -60,6 +65,17 @@ fn exitHandler(runner: *const Runner, input: *const InputCommand) void {
     const code = std.fmt.parseInt(u8, firstArgument, 10) catch 0;
 
     std.process.exit(code);
+}
+
+fn echoHandler(runner: *const Runner, input: *const InputCommand) !void {
+    _ = runner; // autofix
+
+    const stdout = std.io.getStdOut().writer();
+
+    for (input.*.args.?.items) |value| {
+        try stdout.print("{s} ", .{value});
+    }
+    try stdout.print("\n", .{});
 }
 
 const exitCommand = Command{
@@ -76,6 +92,7 @@ pub fn main() !void {
 
     const commands = [_]Command{
         Command{ .name = "exit", .description = "Exit shell" },
+        Command{ .name = "echo", .description = "Echo the input" },
     };
 
     const runner = Runner{ .commands = &commands };
