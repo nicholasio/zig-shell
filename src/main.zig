@@ -90,7 +90,7 @@ fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
     if (found) {
         stdout.print("{s} is a shell builtin \n", .{commandName}) catch {};
     } else {
-        stdout.print("{s}: command not found \n", .{commandName}) catch {};
+        stdout.print("{s}: not found \n", .{commandName}) catch {};
     }
 }
 
