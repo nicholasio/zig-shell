@@ -61,7 +61,7 @@ const Shell = struct {
 
 fn exitHandler(shell: *const Shell, input: *const InputCommand) void {
     _ = shell; // autofix
-    const firstArgument = input.*.args.?.items[0];
+    const firstArgument = if (input.*.args.?.items.len > 0) input.*.args.?.items[0] else "0";
 
     const code = std.fmt.parseInt(u8, firstArgument, 10) catch 0;
 
@@ -70,6 +70,10 @@ fn exitHandler(shell: *const Shell, input: *const InputCommand) void {
 
 fn echoHandler(shell: *const Shell, input: *const InputCommand) void {
     _ = shell; // autofix
+
+    if (input.*.args.?.items.len == 0) {
+        return;
+    }
 
     const stdout = std.io.getStdOut().writer();
 
@@ -81,6 +85,10 @@ fn echoHandler(shell: *const Shell, input: *const InputCommand) void {
 }
 
 fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
+    if (input.*.args.?.items.len == 0) {
+        return;
+    }
+
     const stdout = std.io.getStdOut().writer();
     const commandName = input.*.args.?.items[0];
 
