@@ -33,6 +33,12 @@ const BuiltInCommand = struct {
 const Shell = struct {
     commands: []const BuiltInCommand,
 
+    pub fn init(commands: []const BuiltInCommand) Shell {
+        return Shell{
+            .commands = commands,
+        };
+    }
+
     // method to run the command
     pub fn run(self: *const Shell, command: *const InputCommand) !void {
         // check if the command exists
@@ -96,15 +102,17 @@ fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-
     const stdin = std.io.getStdIn().reader();
+
     var buffer: [1024]u8 = undefined;
 
-    const shell = Shell{ .commands = &[_]BuiltInCommand{
+    const commands = [_]BuiltInCommand{
         BuiltInCommand{ .name = "exit", .description = "Exit shell", .handler = &exitHandler },
         BuiltInCommand{ .name = "echo", .description = "Echo the input", .handler = &echoHandler },
         BuiltInCommand{ .name = "type", .description = "Print the type of the input", .handler = &typeHandler },
-    } };
+    };
+
+    const shell = Shell.init(&commands);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
