@@ -20,21 +20,21 @@ const InputCommand = struct {
     }
 };
 
-const Command = struct {
+const BuiltInCommand = struct {
     name: []const u8,
     description: []const u8,
-    handler: *const fn (runner: *const Runner, input: *const InputCommand) void,
+    handler: *const fn (shell: *const Shell, input: *const InputCommand) void,
 
-    pub fn execute(self: Command, runner: *const Runner, input: *const InputCommand) !void {
-        self.handler(runner, input);
+    pub fn execute(self: BuiltInCommand, shell: *const Shell, input: *const InputCommand) !void {
+        self.handler(shell, input);
     }
 };
 
-const Runner = struct {
-    commands: []const Command,
+const Shell = struct {
+    commands: []const BuiltInCommand,
 
     // method to run the command
-    pub fn run(self: *const Runner, command: *const InputCommand) !void {
+    pub fn run(self: *const Shell, command: *const InputCommand) !void {
         // check if the command exists
         var found = false;
         for (self.commands) |cmd| {
@@ -53,8 +53,8 @@ const Runner = struct {
     }
 };
 
-fn exitHandler(runner: *const Runner, input: *const InputCommand) void {
-    _ = runner; // autofix
+fn exitHandler(shell: *const Shell, input: *const InputCommand) void {
+    _ = shell; // autofix
     const firstArgument = input.*.args.?.items[0];
 
     const code = std.fmt.parseInt(u8, firstArgument, 10) catch 0;
@@ -62,8 +62,8 @@ fn exitHandler(runner: *const Runner, input: *const InputCommand) void {
     std.process.exit(code);
 }
 
-fn echoHandler(runner: *const Runner, input: *const InputCommand) void {
-    _ = runner; // autofix
+fn echoHandler(shell: *const Shell, input: *const InputCommand) void {
+    _ = shell; // autofix
 
     const stdout = std.io.getStdOut().writer();
 
@@ -74,13 +74,13 @@ fn echoHandler(runner: *const Runner, input: *const InputCommand) void {
     stdout.print("\n", .{}) catch {};
 }
 
-fn typeHandler(runner: *const Runner, input: *const InputCommand) void {
+fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
     const stdout = std.io.getStdOut().writer();
     const commandName = input.*.args.?.items[0];
 
     var found = false;
 
-    for (runner.*.commands) |cmd| {
+    for (shell.*.commands) |cmd| {
         if (std.mem.eql(u8, commandName, cmd.name)) {
             found = true;
             break;
@@ -100,10 +100,10 @@ pub fn main() !void {
     const stdin = std.io.getStdIn().reader();
     var buffer: [1024]u8 = undefined;
 
-    const runner = Runner{ .commands = &[_]Command{
-        Command{ .name = "exit", .description = "Exit shell", .handler = &exitHandler },
-        Command{ .name = "echo", .description = "Echo the input", .handler = &echoHandler },
-        Command{ .name = "type", .description = "Print the type of the input", .handler = &typeHandler },
+    const shell = Shell{ .commands = &[_]BuiltInCommand{
+        BuiltInCommand{ .name = "exit", .description = "Exit shell", .handler = &exitHandler },
+        BuiltInCommand{ .name = "echo", .description = "Echo the input", .handler = &echoHandler },
+        BuiltInCommand{ .name = "type", .description = "Print the type of the input", .handler = &typeHandler },
     } };
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -114,6 +114,6 @@ pub fn main() !void {
         const command = try stdin.readUntilDelimiter(&buffer, '\n');
         const cmd = InputCommand.parse(allocator, command) catch InputCommand{ .name = "error", .args = undefined };
 
-        try runner.run(&cmd);
+        try shell.run(&cmd);
     }
 }
