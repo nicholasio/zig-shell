@@ -32,11 +32,19 @@ const BuiltInCommand = struct {
 
 const Shell = struct {
     commands: []const BuiltInCommand,
+    allocator: std.mem.Allocator,
 
-    pub fn init(commands: []const BuiltInCommand) Shell {
+    pub fn init(allocator: std.mem.Allocator, commands: []const BuiltInCommand) Shell {
         return Shell{
+            .allocator = allocator,
             .commands = commands,
         };
+    }
+
+    pub fn getPath(self: Shell) ![]const u8 {
+        const env_vars = try std.process.getEnvMap(self.allocator);
+        const path_value = env_vars.get("PATH") orelse "";
+        return path_value;
     }
 
     // method to run the command
@@ -93,7 +101,8 @@ fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
     const commandName = input.*.args.?.items[0];
 
     var found = false;
-
+    var isExecutable = false;
+    var executablePath: []const u8 = undefined;
     for (shell.*.commands) |cmd| {
         if (std.mem.eql(u8, commandName, cmd.name)) {
             found = true;
@@ -101,7 +110,24 @@ fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
         }
     }
 
-    if (found) {
+    if (!found) {
+        const path = shell.*.getPath() catch "";
+        var iter = std.mem.splitScalar(u8, path, ':');
+        while (iter.next()) |path_segment| {
+            const fullPath = std.fmt.allocPrint(shell.*.allocator, "{s}/{s}", .{ path_segment, commandName }) catch "";
+            const file = std.fs.cwd().openFile(fullPath, .{}) catch null;
+            if (file != null) {
+                isExecutable = true;
+                executablePath = fullPath;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (found and isExecutable) {
+        stdout.print("{s} is {s} \n", .{ commandName, executablePath }) catch {};
+    } else if (found) {
         stdout.print("{s} is a shell builtin \n", .{commandName}) catch {};
     } else {
         stdout.print("{s}: not found \n", .{commandName}) catch {};
@@ -120,10 +146,10 @@ pub fn main() !void {
         BuiltInCommand{ .name = "type", .description = "Print the type of the input", .handler = &typeHandler },
     };
 
-    const shell = Shell.init(&commands);
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
+
+    const shell = Shell.init(allocator, &commands);
 
     while (true) {
         try stdout.print("$ ", .{});
