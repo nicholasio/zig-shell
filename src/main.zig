@@ -74,22 +74,27 @@ const Shell = struct {
             }
         }
 
-        const isExecutableCommand, const executablePath = self.isExecutable(command.name) catch .{ false, undefined };
-        _ = executablePath; // autofix
+        if (!found) {
+            const isExecutableCommand, const executablePath = self.isExecutable(command.name) catch .{ false, undefined };
+            _ = executablePath; // autofix
 
-        if (isExecutableCommand) {
-            var execArgs: [][]const u8 = try self.allocator.alloc([]const u8, command.args.?.items.len + 1);
-            defer self.allocator.free(execArgs);
+            if (isExecutableCommand) {
+                found = true;
+                var execArgs: [][]const u8 = try self.allocator.alloc([]const u8, command.args.?.items.len + 1);
+                defer self.allocator.free(execArgs);
 
-            execArgs[0] = command.name;
+                execArgs[0] = command.name;
 
-            for (command.args.?.items, 1..) |arg, i| {
-                execArgs[i] = arg;
+                for (command.args.?.items, 1..) |arg, i| {
+                    execArgs[i] = arg;
+                }
+
+                var child = std.process.Child.init(execArgs, self.allocator);
+                _ = try child.spawnAndWait();
             }
+        }
 
-            var child = std.process.Child.init(execArgs, self.allocator);
-            _ = try child.spawnAndWait();
-        } else if (!found) {
+        if (!found) {
             // print the error message
             try stdout.print("{s}: command not found \n", .{command.name});
         }
