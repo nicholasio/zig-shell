@@ -47,29 +47,58 @@ const Shell = struct {
         return path_value;
     }
 
+    pub fn isExecutable(self: *const Shell, command: []const u8) !struct { bool, []const u8 } {
+        const path = self.getPath() catch "";
+        var iter = std.mem.splitScalar(u8, path, ':');
+        while (iter.next()) |path_segment| {
+            const fullPath = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ path_segment, command }) catch "";
+            const file = std.fs.cwd().openFile(fullPath, .{}) catch null;
+            if (file != null) {
+                return .{ true, fullPath };
+            }
+        }
+
+        return .{ false, undefined };
+    }
+
     // method to run the command
     pub fn run(self: *const Shell, command: *const InputCommand) !void {
+        const stdout = std.io.getStdOut().writer();
         // check if the command exists
         var found = false;
         for (self.commands) |cmd| {
-            if (std.mem.eql(u8, command.*.name, cmd.name)) {
+            if (std.mem.eql(u8, command.name, cmd.name)) {
                 found = true;
                 try cmd.execute(self, command);
                 break;
             }
         }
 
-        if (!found) {
+        const isExecutableCommand, const executablePath = self.isExecutable(command.name) catch .{ false, undefined };
+        _ = executablePath; // autofix
+
+        if (isExecutableCommand) {
+            var execArgs: [][]const u8 = try self.allocator.alloc([]const u8, command.args.?.items.len + 1);
+            defer self.allocator.free(execArgs);
+
+            execArgs[0] = command.name;
+
+            for (command.args.?.items, 1..) |arg, i| {
+                execArgs[i] = arg;
+            }
+
+            var child = std.process.Child.init(execArgs, self.allocator);
+            _ = try child.spawnAndWait();
+        } else if (!found) {
             // print the error message
-            const stdout = std.io.getStdOut().writer();
-            try stdout.print("{s}: command not found \n", .{command.*.name});
+            try stdout.print("{s}: command not found \n", .{command.name});
         }
     }
 };
 
 fn exitHandler(shell: *const Shell, input: *const InputCommand) void {
     _ = shell; // autofix
-    const firstArgument = if (input.*.args.?.items.len > 0) input.*.args.?.items[0] else "0";
+    const firstArgument = if (input.args.?.items.len > 0) input.args.?.items[0] else "0";
 
     const code = std.fmt.parseInt(u8, firstArgument, 10) catch 0;
 
@@ -79,13 +108,13 @@ fn exitHandler(shell: *const Shell, input: *const InputCommand) void {
 fn echoHandler(shell: *const Shell, input: *const InputCommand) void {
     _ = shell; // autofix
 
-    if (input.*.args.?.items.len == 0) {
+    if (input.args.?.items.len == 0) {
         return;
     }
 
     const stdout = std.io.getStdOut().writer();
 
-    for (input.*.args.?.items) |value| {
+    for (input.args.?.items) |value| {
         stdout.print("{s} ", .{value}) catch {};
     }
 
@@ -93,17 +122,18 @@ fn echoHandler(shell: *const Shell, input: *const InputCommand) void {
 }
 
 fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
-    if (input.*.args.?.items.len == 0) {
+    if (input.args.?.items.len == 0) {
         return;
     }
 
     const stdout = std.io.getStdOut().writer();
-    const commandName = input.*.args.?.items[0];
+    const commandName = input.args.?.items[0];
 
     var found = false;
     var isExecutable = false;
     var executablePath: []const u8 = undefined;
-    for (shell.*.commands) |cmd| {
+
+    for (shell.commands) |cmd| {
         if (std.mem.eql(u8, commandName, cmd.name)) {
             found = true;
             break;
@@ -111,21 +141,10 @@ fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
     }
 
     if (!found) {
-        const path = shell.*.getPath() catch "";
-        var iter = std.mem.splitScalar(u8, path, ':');
-        while (iter.next()) |path_segment| {
-            const fullPath = std.fmt.allocPrint(shell.*.allocator, "{s}/{s}", .{ path_segment, commandName }) catch "";
-            const file = std.fs.cwd().openFile(fullPath, .{}) catch null;
-            if (file != null) {
-                isExecutable = true;
-                executablePath = fullPath;
-                found = true;
-                break;
-            }
-        }
+        isExecutable, executablePath = shell.isExecutable(commandName) catch .{ false, undefined };
     }
 
-    if (found and isExecutable) {
+    if (isExecutable) {
         stdout.print("{s} is {s} \n", .{ commandName, executablePath }) catch {};
     } else if (found) {
         stdout.print("{s} is a shell builtin \n", .{commandName}) catch {};
