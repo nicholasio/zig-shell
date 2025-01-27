@@ -166,6 +166,35 @@ fn pwdHandler(shell: *const Shell, input: *const InputCommand) void {
     stdout.print("{s}\n", .{cwd}) catch {};
 }
 
+fn cdHandler(shell: *const Shell, input: *const InputCommand) void {
+    _ = shell; // autofix
+    if (input.args.?.items.len == 0) {
+        return;
+    }
+
+    const directory = input.args.?.items[0];
+
+    const dirObject = std.fs.cwd().openDir(directory, .{});
+
+    if (dirObject) |dir| {
+        dir.setAsCwd() catch {};
+        //         defer dir.close();
+    } else |err| {
+        const stdout = std.io.getStdOut().writer();
+        switch (err) {
+            std.fs.Dir.OpenError.FileNotFound => stdout.print("cd: {s}: No such file or directory \n", .{directory}) catch {},
+            std.fs.Dir.OpenError.NotDir => stdout.print("cd: {s}: Not a directory \n", .{directory}) catch {},
+            else => {
+                stdout.print("cd: {s}: {s} \n", .{
+                    directory,
+                    "an error occurred",
+                }) catch {};
+                return;
+            },
+        }
+    }
+}
+
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     const stdin = std.io.getStdIn().reader();
@@ -177,6 +206,7 @@ pub fn main() !void {
         BuiltInCommand{ .name = "echo", .description = "Echo the input", .handler = &echoHandler },
         BuiltInCommand{ .name = "type", .description = "Print the type of the input", .handler = &typeHandler },
         BuiltInCommand{ .name = "pwd", .description = "Print the current working directory", .handler = &pwdHandler },
+        BuiltInCommand{ .name = "cd", .description = "Change the current working directory", .handler = &cdHandler },
     };
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
