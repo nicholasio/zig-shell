@@ -158,6 +158,14 @@ fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
     }
 }
 
+fn pwdHandler(shell: *const Shell, input: *const InputCommand) void {
+    _ = input; // autofix
+    const stdout = std.io.getStdOut().writer();
+    const cwd = std.fs.cwd().realpathAlloc(shell.allocator, ".") catch "";
+    defer shell.allocator.free(cwd);
+    stdout.print("{s}\n", .{cwd}) catch {};
+}
+
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     const stdin = std.io.getStdIn().reader();
@@ -168,6 +176,7 @@ pub fn main() !void {
         BuiltInCommand{ .name = "exit", .description = "Exit shell", .handler = &exitHandler },
         BuiltInCommand{ .name = "echo", .description = "Echo the input", .handler = &echoHandler },
         BuiltInCommand{ .name = "type", .description = "Print the type of the input", .handler = &typeHandler },
+        BuiltInCommand{ .name = "pwd", .description = "Print the current working directory", .handler = &pwdHandler },
     };
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
