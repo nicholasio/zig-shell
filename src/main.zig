@@ -47,6 +47,12 @@ const Shell = struct {
         return path_value;
     }
 
+    pub fn getHomeDirectory(self: *const Shell) ![]const u8 {
+        const env_vars = try std.process.getEnvMap(self.allocator);
+        const home_value = env_vars.get("HOME") orelse "";
+        return home_value;
+    }
+
     pub fn isExecutable(self: *const Shell, command: []const u8) !struct { bool, []const u8 } {
         const path = self.getPath() catch "";
         var iter = std.mem.splitScalar(u8, path, ':');
@@ -167,12 +173,15 @@ fn pwdHandler(shell: *const Shell, input: *const InputCommand) void {
 }
 
 fn cdHandler(shell: *const Shell, input: *const InputCommand) void {
-    _ = shell; // autofix
     if (input.args.?.items.len == 0) {
         return;
     }
 
-    const directory = input.args.?.items[0];
+    var directory = input.args.?.items[0];
+
+    if (std.mem.eql(u8, directory, "~")) {
+        directory = shell.getHomeDirectory() catch "";
+    }
 
     const dirObject = std.fs.cwd().openDir(directory, .{});
 
