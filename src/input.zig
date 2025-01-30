@@ -22,7 +22,7 @@ pub const InputCommand = struct {
         defer buffer.deinit();
 
         for (argsString) |c| {
-            if (c == ' ' and !in_quote) {
+            if (c == ' ' and !in_quote and !in_double_quotes) {
                 if (buffer.items.len > 0) {
                     try args.append(try buffer.toOwnedSlice());
                     buffer.clearRetainingCapacity();
@@ -31,12 +31,12 @@ pub const InputCommand = struct {
                 continue;
             }
 
-            if (c == '\'') {
+            if (c == '\'' and !in_double_quotes) {
                 in_quote = !in_quote;
                 continue;
             }
 
-            if (c == '"') {
+            if (c == '"' and !in_quote) {
                 in_double_quotes = !in_double_quotes;
                 continue;
             }
@@ -85,4 +85,31 @@ test "parse command with single quotes and multile args" {
     try expect(std.mem.eql(u8, input.args.?.items[0], "hello world"));
     try expect(std.mem.eql(u8, input.args.?.items[1], "test"));
     try expect(std.mem.eql(u8, input.args.?.items[2], "foo bar"));
+}
+
+test "parse command with double quotes and multile args" {
+    const allocator = std.heap.page_allocator;
+    const command = "echo \"hello world\" test \"foo bar\"";
+
+    const input = try InputCommand.parse(allocator, command);
+
+    try expect(std.mem.eql(u8, input.name, "echo"));
+    try expect(input.args.?.items.len == 3);
+    try expect(std.mem.eql(u8, input.args.?.items[0], "hello world"));
+    try expect(std.mem.eql(u8, input.args.?.items[1], "test"));
+    try expect(std.mem.eql(u8, input.args.?.items[2], "foo bar"));
+}
+
+test "parse command with double quotes and multile args and with both single and double quotes" {
+    const allocator = std.heap.page_allocator;
+    const command = "echo \"hello world\" \"test's\" \"foo bar\" 'hello \" test'";
+
+    const input = try InputCommand.parse(allocator, command);
+
+    try expect(std.mem.eql(u8, input.name, "echo"));
+    try expect(input.args.?.items.len == 4);
+    try expect(std.mem.eql(u8, input.args.?.items[0], "hello world"));
+    try expect(std.mem.eql(u8, input.args.?.items[1], "test's"));
+    try expect(std.mem.eql(u8, input.args.?.items[2], "foo bar"));
+    try expect(std.mem.eql(u8, input.args.?.items[3], "hello \" test"));
 }
