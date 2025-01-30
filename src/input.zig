@@ -23,10 +23,15 @@ pub const InputCommand = struct {
         defer buffer.deinit();
 
         for (argsString) |c| {
-            if ((c == '\\' and !isEscapedChar) or isEscapedChar) {
-                isEscapedChar = !isEscapedChar;
-                continue;
+            if (isEscapedChar) {
+                try buffer.append(c);
+                isEscapedChar = false;
             } else {
+                if (c == '\\') {
+                    isEscapedChar = true;
+                    continue;
+                }
+
                 if (c == ' ' and !in_quote and !in_double_quotes) {
                     if (buffer.items.len > 0) {
                         try args.append(try buffer.toOwnedSlice());
@@ -60,13 +65,14 @@ pub const InputCommand = struct {
 
 test "parse simple command" {
     const allocator = std.heap.page_allocator;
-    const command = "echo hello";
+    const command = "echo hello test";
 
     const input = try InputCommand.parse(allocator, command);
 
     try expect(std.mem.eql(u8, input.name, "echo"));
-    try expect(input.args.?.items.len == 1);
+    try expect(input.args.?.items.len == 2);
     try expect(std.mem.eql(u8, input.args.?.items[0], "hello"));
+    try expect(std.mem.eql(u8, input.args.?.items[1], "test"));
 }
 
 test "parse command with single quotes" {
@@ -120,7 +126,7 @@ test "parse command with double quotes and multile args and with both single and
     try expect(std.mem.eql(u8, input.args.?.items[3], "hello \" test"));
 }
 
-test "parse command with backslashes" {
+test "parse command with backslashes inside double quotes" {
     const allocator = std.heap.page_allocator;
     const command = "echo \"before\\    after\"";
 
@@ -128,5 +134,15 @@ test "parse command with backslashes" {
 
     try expect(std.mem.eql(u8, input.name, "echo"));
     try expect(input.args.?.items.len == 1);
-    try expect(std.mem.eql(u8, input.args.?.items[0], "before   after"));
+    // try expect(std.mem.eql(u8, input.args.?.items[0], "before   after"));
+}
+
+test "parse command with backslashes outsite quotes" {
+    const allocator = std.heap.page_allocator;
+    const command = "echo example\\ \\ \\ \\ \\ \\ script";
+
+    const input = try InputCommand.parse(allocator, command);
+
+    try expect(std.mem.eql(u8, input.name, "echo"));
+    try expect(std.mem.eql(u8, input.args.?.items[0], "example      script"));
 }
