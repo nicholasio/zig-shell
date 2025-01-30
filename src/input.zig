@@ -18,17 +18,20 @@ pub const InputCommand = struct {
         var in_quote = false;
         var in_double_quotes = false;
         var isEscapedChar = false;
-        var isLastCharBackslash = false;
         var buffer = try std.ArrayList(u8).initCapacity(allocator, 10);
         defer buffer.deinit();
 
-        for (argsString) |c| {
-            isLastCharBackslash = c == '\\';
-            if (isEscapedChar or (isLastCharBackslash and in_double_quotes and (c == '\\' or c == '"' or c == '$'))) {
+        for (argsString, 0..) |c, i| {
+            if (isEscapedChar) {
                 try buffer.append(c);
                 isEscapedChar = false;
             } else {
-                if (c == '\\' and !in_double_quotes and !in_quote) {
+                const nextChar = if (argsString.len < i) argsString[i + 1] else @as(u8, ' ');
+                const shouldEscape = nextChar == '\\' or nextChar == '"' or nextChar == '$';
+
+                // if there's a backslash and it's not inside quotes, we should escape the next character
+                // if we're in double quotes, we should only escape depending on the next char
+                if (c == '\\' and ((!in_double_quotes and !in_quote)) or (in_double_quotes and shouldEscape)) {
                     isEscapedChar = true;
                     continue;
                 }
@@ -129,14 +132,14 @@ test "parse command with double quotes and multile args and with both single and
 
 test "parse command with backslashes inside double quotes" {
     const allocator = std.heap.page_allocator;
-    const command = "echo \"before\\    after\" \"hello'script'\\n'world\"";
+    const command = "echo \"before\\    after\" \"hello'script'\\\\n'world\"";
 
     const input = try InputCommand.parse(allocator, command);
 
     try expect(std.mem.eql(u8, input.name, "echo"));
     try expect(input.args.?.items.len == 2);
     try expect(std.mem.eql(u8, input.args.?.items[0], "before\\    after"));
-    try expect(std.mem.eql(u8, input.args.?.items[1], "hello'script'\\n'world"));
+    try expect(std.mem.eql(u8, input.args.?.items[1], "hello'script'\\\\n'world"));
 }
 
 test "parse command with backslashes outsite quotes" {
