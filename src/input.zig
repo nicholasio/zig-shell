@@ -155,7 +155,7 @@ test "parse command with backslashes outsite quotes" {
     input = try InputCommand.parse(allocator, catCommand);
 
     try expect(std.mem.eql(u8, input.name, "cat"));
-    try expect(std.mem.eql(u8, input.args.?.items[0], "/tmp/file\\\\name"));
+    try expect(std.mem.eql(u8, input.args.?.items[0], "/tmp/file\\name"));
     try expect(std.mem.eql(u8, input.args.?.items[1], "/tmp/file\\ name"));
 }
 
