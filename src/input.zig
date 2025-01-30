@@ -26,12 +26,12 @@ pub const InputCommand = struct {
                 try buffer.append(c);
                 isEscapedChar = false;
             } else {
-                const nextChar = if (argsString.len < i) argsString[i + 1] else @as(u8, ' ');
-                const shouldEscape = nextChar == '\\' or nextChar == '"' or nextChar == '$';
+                const nextChar = if (i < argsString.len - 1) parts.rest()[i + 1] else @as(u8, ' ');
+                const maybeEscape = nextChar == '\\' or nextChar == '"' or nextChar == '$';
 
                 // if there's a backslash and it's not inside quotes, we should escape the next character
                 // if we're in double quotes, we should only escape depending on the next char
-                if (c == '\\' and ((!in_double_quotes and !in_quote)) or (in_double_quotes and shouldEscape)) {
+                if ((c == '\\' and (!in_double_quotes and !in_quote)) or (c == '\\' and in_double_quotes and maybeEscape)) {
                     isEscapedChar = true;
                     continue;
                 }
@@ -139,7 +139,7 @@ test "parse command with backslashes inside double quotes" {
     try expect(std.mem.eql(u8, input.name, "echo"));
     try expect(input.args.?.items.len == 2);
     try expect(std.mem.eql(u8, input.args.?.items[0], "before\\    after"));
-    try expect(std.mem.eql(u8, input.args.?.items[1], "hello'script'\\\\n'world"));
+    try expect(std.mem.eql(u8, input.args.?.items[1], "hello'script'\\n'world"));
 }
 
 test "parse command with backslashes outsite quotes" {
