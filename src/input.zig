@@ -5,28 +5,24 @@ pub const InputCommand = struct {
     name: []const u8,
     args: ?std.ArrayList([]const u8),
 
-    // method to parse the command
     pub fn parse(allocator: std.mem.Allocator, command: []const u8) !InputCommand {
         // split the command into name and args
-        var parts = std.mem.splitScalar(u8, command, ' ');
-        const name = parts.first();
-
-        const argsString = parts.rest();
-
         var args = try std.ArrayList([]const u8).initCapacity(allocator, 10);
 
+        var hasCapturedCommandName = false;
+        var name: []u8 = undefined;
         var in_quote = false;
         var in_double_quotes = false;
         var isEscapedChar = false;
         var buffer = try std.ArrayList(u8).initCapacity(allocator, 10);
         defer buffer.deinit();
 
-        for (argsString, 0..) |c, i| {
+        for (command, 0..) |c, i| {
             if (isEscapedChar) {
                 try buffer.append(c);
                 isEscapedChar = false;
             } else {
-                const nextChar = if (i < argsString.len - 1) parts.rest()[i + 1] else @as(u8, ' ');
+                const nextChar = if (i < command.len - 1) command[i + 1] else @as(u8, ' ');
                 const maybeEscape = nextChar == '\\' or nextChar == '"' or nextChar == '$';
 
                 // if there's a backslash and it's not inside quotes, we should escape the next character
@@ -38,7 +34,13 @@ pub const InputCommand = struct {
 
                 if (c == ' ' and !in_quote and !in_double_quotes) {
                     if (buffer.items.len > 0) {
-                        try args.append(try buffer.toOwnedSlice());
+                        if (!hasCapturedCommandName) {
+                            hasCapturedCommandName = true;
+                            name = try allocator.alloc(u8, buffer.items.len);
+                            name = try buffer.toOwnedSlice();
+                        } else {
+                            try args.append(try buffer.toOwnedSlice());
+                        }
                         buffer.clearRetainingCapacity();
                     }
 
@@ -60,12 +62,27 @@ pub const InputCommand = struct {
         }
 
         if (buffer.items.len > 0) {
-            try args.append(try buffer.toOwnedSlice());
+            if (!hasCapturedCommandName) {
+                hasCapturedCommandName = true;
+                name = try allocator.alloc(u8, buffer.items.len);
+                name = try buffer.toOwnedSlice();
+            } else {
+                try args.append(try buffer.toOwnedSlice());
+            }
         }
 
         return InputCommand{ .name = name, .args = args };
     }
 };
+
+test "parse command name with quotes" {
+    const allocator = std.heap.page_allocator;
+    const command = "\"this is an exec\"";
+
+    const input = try InputCommand.parse(allocator, command);
+
+    try expect(std.mem.eql(u8, input.name, "this is an exec"));
+}
 
 test "parse simple command" {
     const allocator = std.heap.page_allocator;
