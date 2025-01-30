@@ -27,7 +27,7 @@ pub const InputCommand = struct {
                 try buffer.append(c);
                 isEscapedChar = false;
             } else {
-                if (c == '\\' and !in_double_quotes) {
+                if (c == '\\' and !in_double_quotes and !in_quote) {
                     isEscapedChar = true;
                     continue;
                 }
@@ -131,10 +131,10 @@ test "parse command with backslashes inside double quotes" {
     const command = "echo \"before\\    after\"";
 
     const input = try InputCommand.parse(allocator, command);
-    std.debug.print("input: {s}\n", .{input.args.?.items[0]});
+
     try expect(std.mem.eql(u8, input.name, "echo"));
     try expect(input.args.?.items.len == 1);
-    // try expect(std.mem.eql(u8, input.args.?.items[0], "before   after"));
+    try expect(std.mem.eql(u8, input.args.?.items[0], "before\\    after"));
 }
 
 test "parse command with backslashes outsite quotes" {
@@ -152,4 +152,14 @@ test "parse command with backslashes outsite quotes" {
     try expect(std.mem.eql(u8, input.name, "cat"));
     try expect(std.mem.eql(u8, input.args.?.items[0], "/tmp/file\\\\name"));
     try expect(std.mem.eql(u8, input.args.?.items[1], "/tmp/file\\ name"));
+}
+
+test "parse command with backslashes inside single quotes" {
+    const allocator = std.heap.page_allocator;
+    const command = "echo 'before\\    after'";
+
+    const input = try InputCommand.parse(allocator, command);
+
+    try expect(std.mem.eql(u8, input.name, "echo"));
+    try expect(std.mem.eql(u8, input.args.?.items[0], "before\\    after"));
 }
