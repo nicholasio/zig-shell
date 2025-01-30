@@ -18,12 +18,13 @@ pub const InputCommand = struct {
         var in_quote = false;
         var in_double_quotes = false;
         var isEscapedChar = false;
-
+        var isLastCharBackslash = false;
         var buffer = try std.ArrayList(u8).initCapacity(allocator, 10);
         defer buffer.deinit();
 
         for (argsString) |c| {
-            if (isEscapedChar) {
+            isLastCharBackslash = c == '\\';
+            if (isEscapedChar or (isLastCharBackslash and in_double_quotes and (c == '\\' or c == '"' or c == '$'))) {
                 try buffer.append(c);
                 isEscapedChar = false;
             } else {
@@ -128,13 +129,14 @@ test "parse command with double quotes and multile args and with both single and
 
 test "parse command with backslashes inside double quotes" {
     const allocator = std.heap.page_allocator;
-    const command = "echo \"before\\    after\"";
+    const command = "echo \"before\\    after\" \"hello'script'\\n'world\"";
 
     const input = try InputCommand.parse(allocator, command);
 
     try expect(std.mem.eql(u8, input.name, "echo"));
-    try expect(input.args.?.items.len == 1);
+    try expect(input.args.?.items.len == 2);
     try expect(std.mem.eql(u8, input.args.?.items[0], "before\\    after"));
+    try expect(std.mem.eql(u8, input.args.?.items[1], "hello'script'\\n'world"));
 }
 
 test "parse command with backslashes outsite quotes" {
