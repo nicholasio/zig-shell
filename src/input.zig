@@ -141,8 +141,15 @@ test "parse command with backslashes outsite quotes" {
     const allocator = std.heap.page_allocator;
     const command = "echo example\\ \\ \\ \\ \\ \\ script";
 
-    const input = try InputCommand.parse(allocator, command);
+    var input = try InputCommand.parse(allocator, command);
 
     try expect(std.mem.eql(u8, input.name, "echo"));
     try expect(std.mem.eql(u8, input.args.?.items[0], "example      script"));
+
+    const catCommand = "cat \"/tmp/file\\\\name\" \"/tmp/file\\ name\"";
+    input = try InputCommand.parse(allocator, catCommand);
+    std.debug.print("input: {s}\n", .{input.args.?.items[0]});
+    std.debug.print("input: {s}\n", .{input.args.?.items[1]});
+    try expect(std.mem.eql(u8, input.name, "cat"));
+    try expect(std.mem.eql(u8, input.args.?.items[0], "/tmp/file\\name"));
 }
