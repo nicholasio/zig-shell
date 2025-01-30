@@ -17,31 +17,37 @@ pub const InputCommand = struct {
 
         var in_quote = false;
         var in_double_quotes = false;
+        var isEscapedChar = false;
 
         var buffer = try std.ArrayList(u8).initCapacity(allocator, 10);
         defer buffer.deinit();
 
         for (argsString) |c| {
-            if (c == ' ' and !in_quote and !in_double_quotes) {
-                if (buffer.items.len > 0) {
-                    try args.append(try buffer.toOwnedSlice());
-                    buffer.clearRetainingCapacity();
+            if ((c == '\\' and !isEscapedChar) or isEscapedChar) {
+                isEscapedChar = !isEscapedChar;
+                continue;
+            } else {
+                if (c == ' ' and !in_quote and !in_double_quotes) {
+                    if (buffer.items.len > 0) {
+                        try args.append(try buffer.toOwnedSlice());
+                        buffer.clearRetainingCapacity();
+                    }
+
+                    continue;
                 }
 
-                continue;
-            }
+                if (c == '\'' and !in_double_quotes) {
+                    in_quote = !in_quote;
+                    continue;
+                }
 
-            if (c == '\'' and !in_double_quotes) {
-                in_quote = !in_quote;
-                continue;
-            }
+                if (c == '"' and !in_quote) {
+                    in_double_quotes = !in_double_quotes;
+                    continue;
+                }
 
-            if (c == '"' and !in_quote) {
-                in_double_quotes = !in_double_quotes;
-                continue;
+                try buffer.append(c);
             }
-
-            try buffer.append(c);
         }
 
         if (buffer.items.len > 0) {
@@ -112,4 +118,15 @@ test "parse command with double quotes and multile args and with both single and
     try expect(std.mem.eql(u8, input.args.?.items[1], "test's"));
     try expect(std.mem.eql(u8, input.args.?.items[2], "foo bar"));
     try expect(std.mem.eql(u8, input.args.?.items[3], "hello \" test"));
+}
+
+test "parse command with backslashes" {
+    const allocator = std.heap.page_allocator;
+    const command = "echo \"before\\    after\"";
+
+    const input = try InputCommand.parse(allocator, command);
+
+    try expect(std.mem.eql(u8, input.name, "echo"));
+    try expect(input.args.?.items.len == 1);
+    try expect(std.mem.eql(u8, input.args.?.items[0], "before   after"));
 }
