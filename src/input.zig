@@ -14,8 +14,17 @@ const InputRedirection = struct {
 };
 
 pub fn isRedirection(arg: []const u8) bool {
-    return std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>") or std.mem.eql(u8, arg, ">>") or std.mem.eql(u8, arg, "<") or std.mem.eql(u8, arg, "2>") or std.mem.eql(u8, arg, "2>>");
+    return isStderrRedirection(arg) or isStdoutRedirection(arg);
 }
+
+pub fn isStdoutRedirection(arg: []const u8) bool {
+    return std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>") or std.mem.eql(u8, arg, ">>") or std.mem.eql(u8, arg, "1>>");
+}
+
+pub fn isStderrRedirection(arg: []const u8) bool {
+    return std.mem.eql(u8, arg, "2>") or std.mem.eql(u8, arg, "2>>");
+}
+
 pub const InputCommand = struct {
     name: []const u8,
     args: ?std.ArrayList([]const u8),
