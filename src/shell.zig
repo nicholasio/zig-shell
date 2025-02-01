@@ -70,9 +70,14 @@ pub const Shell = struct {
         const stdout = std.io.getStdOut().writer();
 
         if (command.nextArg()) |arg| {
-            if (std.mem.eql(u8, arg, "2>")) {
+            if (Input.isStderrRedirection(arg)) {
                 const file = command.nextArg() orelse "";
-                const fileWriter = try std.fs.cwd().createFile(file, .{ .truncate = true });
+                const truncate = std.mem.eql(u8, arg, "2>");
+                const fileWriter = try std.fs.cwd().createFile(file, .{ .truncate = truncate });
+                if (!truncate) {
+                    const stat = try fileWriter.stat();
+                    try fileWriter.seekTo(stat.size);
+                }
 
                 if (result) |value| {
                     const writer = fileWriter.writer();
