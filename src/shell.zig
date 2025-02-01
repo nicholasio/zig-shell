@@ -63,20 +63,24 @@ pub const Shell = struct {
     fn handleStderr(self: *const Shell, result: ?[]const u8, command: *InputCommand) !void {
         _ = self; // autofix
         const stdout = std.io.getStdOut().writer();
-        if (result) |value| {
-            if (command.nextArg()) |arg| {
-                if (std.mem.eql(u8, arg, "2>")) {
-                    const file = command.nextArg() orelse "";
-                    const fileWriter = try std.fs.cwd().createFile(file, .{ .truncate = true });
+
+        if (command.nextArg()) |arg| {
+            if (std.mem.eql(u8, arg, "2>")) {
+                const file = command.nextArg() orelse "";
+                const fileWriter = try std.fs.cwd().createFile(file, .{ .truncate = true });
+
+                if (result) |value| {
                     const writer = fileWriter.writer();
                     try writer.print("{s}", .{value});
-                } else {
-                    command.rewindOneArg();
-                    stdout.print("{s}", .{value}) catch {};
+                    return;
                 }
             } else {
-                stdout.print("{s}", .{value}) catch {};
+                command.rewindOneArg();
             }
+        }
+
+        if (result) |value| {
+            stdout.print("{s}", .{value}) catch {};
         }
     }
 
@@ -89,7 +93,12 @@ pub const Shell = struct {
                 found = true;
                 const result = try cmd.execute(self, command);
 
-                try self.handleStdout(result, command);
+                const b_stderr = if (result.isError) result.value else @as(?[]const u8, "");
+                const b_stdout = if (!result.isError) result.value else @as(?[]const u8, "");
+
+                try self.handleStderr(b_stderr, command);
+                try self.handleStdout(b_stdout, command);
+
                 break;
             }
         }

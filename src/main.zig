@@ -3,8 +3,9 @@ const Input = @import("input.zig");
 const InputCommand = Input.InputCommand;
 const Shell = @import("shell.zig").Shell;
 const BuiltInCommand = @import("builtincommand.zig").BuiltInCommand;
+const Result = @import("builtincommand.zig").Result;
 
-fn exitHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
+fn exitHandler(shell: *const Shell, input: *InputCommand) Result {
     _ = shell; // autofix
     const firstArgument = input.nextArg() orelse "0";
 
@@ -12,12 +13,12 @@ fn exitHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
 
     std.process.exit(code);
 
-    return null;
+    return .{ .value = null, .isError = false };
 }
 
-fn echoHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
+fn echoHandler(shell: *const Shell, input: *InputCommand) Result {
     if (input.args.?.items.len == 0) {
-        return null;
+        return .{ .value = null, .isError = false };
     }
 
     var echoed: ?[]u8 = null;
@@ -31,17 +32,17 @@ fn echoHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
     }
 
     if (echoed) |value| {
-        return std.fmt.allocPrint(shell.allocator, "{s}\n", .{value}) catch null;
+        return .{ .value = std.fmt.allocPrint(shell.allocator, "{s}\n", .{value}) catch null, .isError = false };
     }
 
-    return echoed;
+    return .{ .value = echoed, .isError = false };
 }
 
-fn typeHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
+fn typeHandler(shell: *const Shell, input: *InputCommand) Result {
     const commandName = input.nextArg() orelse "";
 
     if (std.mem.eql(u8, commandName, "")) {
-        return null;
+        return .{ .value = null, .isError = false };
     }
 
     var found = false;
@@ -60,27 +61,29 @@ fn typeHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
     }
 
     var out: ?[]const u8 = null;
+    var isError = false;
 
     if (isExecutable) {
         out = std.fmt.allocPrint(shell.allocator, "{s} is {s}\n", .{ commandName, executablePath }) catch "";
     } else if (found) {
         out = std.fmt.allocPrint(shell.allocator, "{s} is a shell builtin\n", .{commandName}) catch "";
     } else {
+        isError = true;
         out = std.fmt.allocPrint(shell.allocator, "{s}: not found\n", .{commandName}) catch "";
     }
 
-    return out;
+    return .{ .value = out, .isError = isError };
 }
 
-fn pwdHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
+fn pwdHandler(shell: *const Shell, input: *InputCommand) Result {
     _ = input; // autofix
 
     const cwd = std.fs.cwd().realpathAlloc(shell.allocator, ".") catch "";
 
-    return std.fmt.allocPrint(shell.allocator, "{s}\n", .{cwd}) catch null;
+    return .{ .value = std.fmt.allocPrint(shell.allocator, "{s}\n", .{cwd}) catch null, .isError = false };
 }
 
-fn cdHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
+fn cdHandler(shell: *const Shell, input: *InputCommand) Result {
     var directory = input.nextArg() orelse "";
 
     if (std.mem.eql(u8, directory, "~")) {
@@ -93,16 +96,16 @@ fn cdHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
         dir.setAsCwd() catch {};
     } else |err| {
         return switch (err) {
-            std.fs.Dir.OpenError.FileNotFound => std.fmt.allocPrint(shell.allocator, "cd: {s}: No such file or directory\n", .{directory}) catch null,
-            std.fs.Dir.OpenError.NotDir => std.fmt.allocPrint(shell.allocator, "cd: {s}: Not a directory\n", .{directory}) catch null,
-            else => std.fmt.allocPrint(shell.allocator, "cd: {s}: {s}\n", .{
+            std.fs.Dir.OpenError.FileNotFound => .{ .value = std.fmt.allocPrint(shell.allocator, "cd: {s}: No such file or directory\n", .{directory}) catch null, .isError = true },
+            std.fs.Dir.OpenError.NotDir => .{ .value = std.fmt.allocPrint(shell.allocator, "cd: {s}: Not a directory\n", .{directory}) catch null, .isError = true },
+            else => .{ .value = std.fmt.allocPrint(shell.allocator, "cd: {s}: {s}\n", .{
                 directory,
                 "an error occurred",
-            }) catch null,
+            }) catch null, .isError = true },
         };
     }
 
-    return null;
+    return .{ .value = null, .isError = false };
 }
 
 pub fn main() !void {
