@@ -3,38 +3,41 @@ const InputCommand = @import("input.zig").InputCommand;
 const Shell = @import("shell.zig").Shell;
 const BuiltInCommand = @import("builtincommand.zig").BuiltInCommand;
 
-fn exitHandler(shell: *const Shell, input: *const InputCommand) void {
+fn exitHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
     _ = shell; // autofix
-    const firstArgument = if (input.args.?.items.len > 0) input.args.?.items[0] else "0";
+    const firstArgument = input.nextArg() orelse "0";
 
     const code = std.fmt.parseInt(u8, firstArgument, 10) catch 0;
 
     std.process.exit(code);
+
+    return null;
 }
 
-fn echoHandler(shell: *const Shell, input: *const InputCommand) void {
-    _ = shell; // autofix
-
+fn echoHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
     if (input.args.?.items.len == 0) {
-        return;
+        return null;
     }
 
-    const stdout = std.io.getStdOut().writer();
-
-    for (input.args.?.items) |value| {
-        stdout.print("{s} ", .{value}) catch {};
+    var echoed: ?[]u8 = null;
+    while (input.nextArg()) |value| {
+        if (std.mem.eql(u8, value, ">")) {
+            input.rewindOneArg();
+            break;
+        }
+        const toConcat = echoed orelse "";
+        echoed = std.fmt.allocPrint(shell.allocator, "{s}{s} ", .{ toConcat, value }) catch "";
     }
 
-    stdout.print("\n", .{}) catch {};
+    return echoed;
 }
 
-fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
-    if (input.args.?.items.len == 0) {
-        return;
-    }
+fn typeHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
+    const commandName = input.nextArg() orelse "";
 
-    const stdout = std.io.getStdOut().writer();
-    const commandName = input.args.?.items[0];
+    if (std.mem.eql(u8, commandName, "")) {
+        return null;
+    }
 
     var found = false;
     var isExecutable = false;
@@ -51,29 +54,29 @@ fn typeHandler(shell: *const Shell, input: *const InputCommand) void {
         isExecutable, executablePath = shell.isExecutable(commandName) catch .{ false, undefined };
     }
 
+    var out: ?[]const u8 = null;
+
     if (isExecutable) {
-        stdout.print("{s} is {s} \n", .{ commandName, executablePath }) catch {};
+        out = std.fmt.allocPrint(shell.allocator, "{s} is {s}", .{ commandName, executablePath }) catch "";
     } else if (found) {
-        stdout.print("{s} is a shell builtin \n", .{commandName}) catch {};
+        out = std.fmt.allocPrint(shell.allocator, "{s} is a shell builtin", .{commandName}) catch "";
     } else {
-        stdout.print("{s}: not found \n", .{commandName}) catch {};
+        out = std.fmt.allocPrint(shell.allocator, "{s}: not found", .{commandName}) catch "";
     }
+
+    return out;
 }
 
-fn pwdHandler(shell: *const Shell, input: *const InputCommand) void {
+fn pwdHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
     _ = input; // autofix
-    const stdout = std.io.getStdOut().writer();
+
     const cwd = std.fs.cwd().realpathAlloc(shell.allocator, ".") catch "";
-    defer shell.allocator.free(cwd);
-    stdout.print("{s}\n", .{cwd}) catch {};
+
+    return cwd;
 }
 
-fn cdHandler(shell: *const Shell, input: *const InputCommand) void {
-    if (input.args.?.items.len == 0) {
-        return;
-    }
-
-    var directory = input.args.?.items[0];
+fn cdHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
+    var directory = input.nextArg() orelse "";
 
     if (std.mem.eql(u8, directory, "~")) {
         directory = shell.getHomeDirectory() catch "";
@@ -83,21 +86,18 @@ fn cdHandler(shell: *const Shell, input: *const InputCommand) void {
 
     if (dirObject) |dir| {
         dir.setAsCwd() catch {};
-        //         defer dir.close();
     } else |err| {
-        const stdout = std.io.getStdOut().writer();
-        switch (err) {
-            std.fs.Dir.OpenError.FileNotFound => stdout.print("cd: {s}: No such file or directory \n", .{directory}) catch {},
-            std.fs.Dir.OpenError.NotDir => stdout.print("cd: {s}: Not a directory \n", .{directory}) catch {},
-            else => {
-                stdout.print("cd: {s}: {s} \n", .{
-                    directory,
-                    "an error occurred",
-                }) catch {};
-                return;
-            },
-        }
+        return switch (err) {
+            std.fs.Dir.OpenError.FileNotFound => std.fmt.allocPrint(shell.allocator, "cd: {s}: No such file or directory", .{directory}) catch null,
+            std.fs.Dir.OpenError.NotDir => std.fmt.allocPrint(shell.allocator, "cd: {s}: Not a directory", .{directory}) catch null,
+            else => std.fmt.allocPrint(shell.allocator, "cd: {s}: {s}", .{
+                directory,
+                "an error occurred",
+            }) catch null,
+        };
     }
+
+    return null;
 }
 
 pub fn main() !void {
@@ -122,7 +122,7 @@ pub fn main() !void {
     while (true) {
         try stdout.print("$ ", .{});
         const command = try stdin.readUntilDelimiter(&buffer, '\n');
-        const cmd = InputCommand.parse(allocator, command) catch InputCommand{ .name = "error", .args = undefined };
+        var cmd = InputCommand.parse(allocator, command) catch InputCommand{ .name = "error", .args = undefined };
 
         try shell.run(&cmd);
     }

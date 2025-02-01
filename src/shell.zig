@@ -40,14 +40,41 @@ pub const Shell = struct {
     }
 
     // method to run the command
-    pub fn run(self: *const Shell, command: *const InputCommand) !void {
+    pub fn run(self: *const Shell, command: *InputCommand) !void {
         const stdout = std.io.getStdOut().writer();
         // check if the command exists
         var found = false;
         for (self.commands) |cmd| {
             if (std.mem.eql(u8, command.name, cmd.name)) {
                 found = true;
-                try cmd.execute(self, command);
+                const result = try cmd.execute(self, command);
+
+                if (result) |value| {
+                    if (command.nextArg()) |arg| {
+                        if (std.mem.eql(u8, arg, "1>") or std.mem.eql(u8, arg, ">")) {
+                            const file = command.nextArg() orelse "";
+                            const fileWriter = try std.fs.cwd().createFile(file, .{ .truncate = true });
+                            const writer = fileWriter.writer();
+                            try writer.print("{s}\n", .{value});
+                        } else if (std.mem.eql(u8, arg, "2>") or std.mem.eql(u8, arg, "2>>")) {
+                            const file = command.nextArg() orelse "";
+                            const fileWriter = try std.fs.cwd().openFile(file, .{ .mode = std.fs.File.OpenMode.read_write });
+
+                            const writer = fileWriter.writer();
+                            try writer.print("{s}\n", .{value});
+                        } else if (std.mem.eql(u8, arg, ">>")) {
+                            const file = command.nextArg() orelse "";
+                            const fileWriter = try std.fs.cwd().openFile(file, .{ .mode = std.fs.File.OpenMode.read_write });
+
+                            const writer = fileWriter.writer();
+                            try writer.print("{s}\n", .{value});
+                        } else {
+                            stdout.print("{s}\n", .{value}) catch {};
+                        }
+                    } else {
+                        stdout.print("{s}\n", .{value}) catch {};
+                    }
+                }
                 break;
             }
         }

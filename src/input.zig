@@ -1,9 +1,62 @@
 const std = @import("std");
 const expect = std.testing.expect;
 
+const RedirectionType = enum {
+    None,
+    Input,
+    Output,
+    Append,
+};
+
+const InputRedirection = struct {
+    type: RedirectionType,
+    file: []const u8,
+};
+
 pub const InputCommand = struct {
     name: []const u8,
     args: ?std.ArrayList([]const u8),
+    argIndex: usize = 0,
+
+    pub fn nextArg(self: *InputCommand) ?[]const u8 {
+        if (self.args == null) {
+            return null;
+        }
+
+        if (self.args.?.items.len == 0) {
+            return null;
+        }
+
+        if (self.argIndex >= self.args.?.items.len) {
+            return null;
+        }
+
+        const arg = self.args.?.items[self.argIndex];
+        self.argIndex = self.argIndex + 1;
+        return arg;
+    }
+
+    pub fn rewindOneArg(self: *InputCommand) void {
+        if (self.argIndex > 0) {
+            self.argIndex = self.argIndex - 1;
+        }
+    }
+
+    pub fn currentArg(self: *InputCommand) ?[]const u8 {
+        if (self.args == null) {
+            return null;
+        }
+
+        if (self.args.?.items.len == 0) {
+            return null;
+        }
+
+        if (self.argIndex >= self.args.?.items.len) {
+            return null;
+        }
+
+        return self.args.?.items[self.argIndex];
+    }
 
     pub fn parse(allocator: std.mem.Allocator, command: []const u8) !InputCommand {
         // split the command into name and args
@@ -14,6 +67,7 @@ pub const InputCommand = struct {
         var in_quote = false;
         var in_double_quotes = false;
         var isEscapedChar = false;
+
         var buffer = try std.ArrayList(u8).initCapacity(allocator, 10);
         defer buffer.deinit();
 
