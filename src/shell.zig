@@ -1,6 +1,7 @@
 const std = @import("std");
 const BuiltInCommand = @import("builtincommand.zig").BuiltInCommand;
-const InputCommand = @import("input.zig").InputCommand;
+const Input = @import("input.zig");
+const InputCommand = Input.InputCommand;
 
 pub const Shell = struct {
     commands: []const BuiltInCommand,
@@ -39,42 +40,47 @@ pub const Shell = struct {
         return .{ false, undefined };
     }
 
-    // method to run the command
+    fn handleResult(self: *const Shell, result: ?[]const u8, command: *InputCommand) !void {
+        _ = self; // autofix
+        const stdout = std.io.getStdOut().writer();
+        if (result) |value| {
+            if (command.nextArg()) |arg| {
+                if (std.mem.eql(u8, arg, "1>") or std.mem.eql(u8, arg, ">")) {
+                    const file = command.nextArg() orelse "";
+                    const fileWriter = try std.fs.cwd().createFile(file, .{ .truncate = true });
+                    const writer = fileWriter.writer();
+                    try writer.print("{s}", .{value});
+                } else if (std.mem.eql(u8, arg, "2>") or std.mem.eql(u8, arg, "2>>")) {
+                    const file = command.nextArg() orelse "";
+                    const fileWriter = try std.fs.cwd().openFile(file, .{ .mode = std.fs.File.OpenMode.read_write });
+
+                    const writer = fileWriter.writer();
+                    try writer.print("{s}", .{value});
+                } else if (std.mem.eql(u8, arg, ">>")) {
+                    const file = command.nextArg() orelse "";
+                    const fileWriter = try std.fs.cwd().openFile(file, .{ .mode = std.fs.File.OpenMode.read_write });
+
+                    const writer = fileWriter.writer();
+                    try writer.print("{s}", .{value});
+                } else {
+                    stdout.print("{s}", .{value}) catch {};
+                }
+            } else {
+                stdout.print("{s}", .{value}) catch {};
+            }
+        }
+    }
+
     pub fn run(self: *const Shell, command: *InputCommand) !void {
         const stdout = std.io.getStdOut().writer();
-        // check if the command exists
+
         var found = false;
         for (self.commands) |cmd| {
             if (std.mem.eql(u8, command.name, cmd.name)) {
                 found = true;
                 const result = try cmd.execute(self, command);
 
-                if (result) |value| {
-                    if (command.nextArg()) |arg| {
-                        if (std.mem.eql(u8, arg, "1>") or std.mem.eql(u8, arg, ">")) {
-                            const file = command.nextArg() orelse "";
-                            const fileWriter = try std.fs.cwd().createFile(file, .{ .truncate = true });
-                            const writer = fileWriter.writer();
-                            try writer.print("{s}\n", .{value});
-                        } else if (std.mem.eql(u8, arg, "2>") or std.mem.eql(u8, arg, "2>>")) {
-                            const file = command.nextArg() orelse "";
-                            const fileWriter = try std.fs.cwd().openFile(file, .{ .mode = std.fs.File.OpenMode.read_write });
-
-                            const writer = fileWriter.writer();
-                            try writer.print("{s}\n", .{value});
-                        } else if (std.mem.eql(u8, arg, ">>")) {
-                            const file = command.nextArg() orelse "";
-                            const fileWriter = try std.fs.cwd().openFile(file, .{ .mode = std.fs.File.OpenMode.read_write });
-
-                            const writer = fileWriter.writer();
-                            try writer.print("{s}\n", .{value});
-                        } else {
-                            stdout.print("{s}\n", .{value}) catch {};
-                        }
-                    } else {
-                        stdout.print("{s}\n", .{value}) catch {};
-                    }
-                }
+                try self.handleResult(result, command);
                 break;
             }
         }
@@ -85,17 +91,28 @@ pub const Shell = struct {
 
             if (isExecutableCommand) {
                 found = true;
-                var execArgs: [][]const u8 = try self.allocator.alloc([]const u8, command.args.?.items.len + 1);
+
+                const argsLen: usize = if (command.hasRedirection) command.args.?.items.len - 2 + 1 else command.args.?.items.len + 1;
+
+                var execArgs: [][]const u8 = try self.allocator.alloc([]const u8, argsLen);
+
                 defer self.allocator.free(execArgs);
 
                 execArgs[0] = command.name;
 
-                for (command.args.?.items, 1..) |arg, i| {
+                var i: usize = 1;
+                while (command.nextArg()) |arg| {
+                    if (Input.isRedirection(arg)) {
+                        command.rewindOneArg();
+                        break;
+                    }
                     execArgs[i] = arg;
+                    i += 1;
                 }
 
-                var child = std.process.Child.init(execArgs, self.allocator);
-                _ = try child.spawnAndWait();
+                const child = try std.process.Child.run(.{ .argv = execArgs, .allocator = self.allocator });
+
+                try self.handleResult(child.stdout, command);
             }
         }
 

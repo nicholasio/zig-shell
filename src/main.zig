@@ -1,5 +1,6 @@
 const std = @import("std");
-const InputCommand = @import("input.zig").InputCommand;
+const Input = @import("input.zig");
+const InputCommand = Input.InputCommand;
 const Shell = @import("shell.zig").Shell;
 const BuiltInCommand = @import("builtincommand.zig").BuiltInCommand;
 
@@ -21,12 +22,16 @@ fn echoHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
 
     var echoed: ?[]u8 = null;
     while (input.nextArg()) |value| {
-        if (std.mem.eql(u8, value, ">")) {
+        if (Input.isRedirection(value)) {
             input.rewindOneArg();
             break;
         }
         const toConcat = echoed orelse "";
         echoed = std.fmt.allocPrint(shell.allocator, "{s}{s} ", .{ toConcat, value }) catch "";
+    }
+
+    if (echoed) |value| {
+        return std.fmt.allocPrint(shell.allocator, "{s}\n", .{value}) catch null;
     }
 
     return echoed;
@@ -57,11 +62,11 @@ fn typeHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
     var out: ?[]const u8 = null;
 
     if (isExecutable) {
-        out = std.fmt.allocPrint(shell.allocator, "{s} is {s}", .{ commandName, executablePath }) catch "";
+        out = std.fmt.allocPrint(shell.allocator, "{s} is {s}\n", .{ commandName, executablePath }) catch "";
     } else if (found) {
-        out = std.fmt.allocPrint(shell.allocator, "{s} is a shell builtin", .{commandName}) catch "";
+        out = std.fmt.allocPrint(shell.allocator, "{s} is a shell builtin\n", .{commandName}) catch "";
     } else {
-        out = std.fmt.allocPrint(shell.allocator, "{s}: not found", .{commandName}) catch "";
+        out = std.fmt.allocPrint(shell.allocator, "{s}: not found\n", .{commandName}) catch "";
     }
 
     return out;
@@ -72,7 +77,7 @@ fn pwdHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
 
     const cwd = std.fs.cwd().realpathAlloc(shell.allocator, ".") catch "";
 
-    return cwd;
+    return std.fmt.allocPrint(shell.allocator, "{s}\n", .{cwd}) catch null;
 }
 
 fn cdHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
@@ -88,9 +93,9 @@ fn cdHandler(shell: *const Shell, input: *InputCommand) ?[]const u8 {
         dir.setAsCwd() catch {};
     } else |err| {
         return switch (err) {
-            std.fs.Dir.OpenError.FileNotFound => std.fmt.allocPrint(shell.allocator, "cd: {s}: No such file or directory", .{directory}) catch null,
-            std.fs.Dir.OpenError.NotDir => std.fmt.allocPrint(shell.allocator, "cd: {s}: Not a directory", .{directory}) catch null,
-            else => std.fmt.allocPrint(shell.allocator, "cd: {s}: {s}", .{
+            std.fs.Dir.OpenError.FileNotFound => std.fmt.allocPrint(shell.allocator, "cd: {s}: No such file or directory\n", .{directory}) catch null,
+            std.fs.Dir.OpenError.NotDir => std.fmt.allocPrint(shell.allocator, "cd: {s}: Not a directory\n", .{directory}) catch null,
+            else => std.fmt.allocPrint(shell.allocator, "cd: {s}: {s}\n", .{
                 directory,
                 "an error occurred",
             }) catch null,

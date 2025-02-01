@@ -13,10 +13,14 @@ const InputRedirection = struct {
     file: []const u8,
 };
 
+pub fn isRedirection(arg: []const u8) bool {
+    return std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>") or std.mem.eql(u8, arg, ">>") or std.mem.eql(u8, arg, "<") or std.mem.eql(u8, arg, "2>") or std.mem.eql(u8, arg, "2>>");
+}
 pub const InputCommand = struct {
     name: []const u8,
     args: ?std.ArrayList([]const u8),
     argIndex: usize = 0,
+    hasRedirection: bool = false,
 
     pub fn nextArg(self: *InputCommand) ?[]const u8 {
         if (self.args == null) {
@@ -42,7 +46,7 @@ pub const InputCommand = struct {
         }
     }
 
-    pub fn currentArg(self: *InputCommand) ?[]const u8 {
+    pub fn peekArg(self: *InputCommand) ?[]const u8 {
         if (self.args == null) {
             return null;
         }
@@ -67,6 +71,7 @@ pub const InputCommand = struct {
         var in_quote = false;
         var in_double_quotes = false;
         var isEscapedChar = false;
+        var hasRedirection = false;
 
         var buffer = try std.ArrayList(u8).initCapacity(allocator, 10);
         defer buffer.deinit();
@@ -93,7 +98,11 @@ pub const InputCommand = struct {
                             name = try allocator.alloc(u8, buffer.items.len);
                             name = try buffer.toOwnedSlice();
                         } else {
-                            try args.append(try buffer.toOwnedSlice());
+                            const slice = try buffer.toOwnedSlice();
+                            if (isRedirection(slice)) {
+                                hasRedirection = true;
+                            }
+                            try args.append(slice);
                         }
                         buffer.clearRetainingCapacity();
                     }
@@ -121,11 +130,15 @@ pub const InputCommand = struct {
                 name = try allocator.alloc(u8, buffer.items.len);
                 name = try buffer.toOwnedSlice();
             } else {
-                try args.append(try buffer.toOwnedSlice());
+                const slice = try buffer.toOwnedSlice();
+                if (isRedirection(slice)) {
+                    hasRedirection = true;
+                }
+                try args.append(slice);
             }
         }
 
-        return InputCommand{ .name = name, .args = args };
+        return InputCommand{ .name = name, .args = args, .hasRedirection = hasRedirection };
     }
 };
 
