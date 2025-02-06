@@ -138,7 +138,10 @@ pub fn main() !void {
 
             if (c == '\t') {
                 if (buf_index > 0) {
-                    const len = try shell.handleTab(buffer[0..buf_index], &buffer);
+                    const len = shell.handleTab(buffer[0..buf_index], &buffer) catch {
+                        continue;
+                    };
+
                     if (len > 0) {
                         try stdout.print("{s}", .{buffer[buf_index..len]});
                         buf_index = len;

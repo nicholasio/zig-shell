@@ -117,24 +117,33 @@ pub const Shell = struct {
                 @memcpy(buffer[0..cmd.name.len], cmd.name);
                 buffer[cmd.name.len] = ' ';
                 len = cmd.name.len + 1;
-                break;
+                return len;
             }
         }
 
-        // if (!found) {
-        //     const path = try self.getPath();
-        //     var iter = std.mem.splitScalar(u8, path, ':');
-        //     while (iter.next()) |path_segment| {
-        //         const dir = try std.fs.cwd().openDir(path_segment, .{});
-        //         if (dir) |d| {
-        //             while (d.next()) |entry| {
-        //                 if (std.mem.eql(u8, command, entry.name)) {
-        //                     break;
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+        if (len == 0) {
+            const path = try self.getPath();
+            var iter = std.mem.splitScalar(u8, path, ':');
+            while (iter.next()) |path_segment| {
+                const _dir = std.fs.cwd().openDir(path_segment, .{ .iterate = true });
+
+                if (_dir) |dir| {
+                    var dirIter = try dir.walk(self.allocator);
+
+                    while (try dirIter.next()) |entry| {
+                        if (std.mem.startsWith(u8, entry.basename, command)) {
+                            @memcpy(buffer[0..entry.basename.len], entry.basename);
+                            buffer[entry.basename.len] = ' ';
+                            len = entry.basename.len + 1;
+                            return len;
+                        }
+                    }
+                } else |_| {
+                    std.debug.print("Failed to open directory: {s}\n", .{path_segment});
+                    continue;
+                }
+            }
+        }
 
         return len;
     }
