@@ -142,6 +142,8 @@ pub fn main() !void {
                     if (len > 0) {
                         try stdout.print("{s}", .{buffer[buf_index..len]});
                         buf_index = len;
+                    } else {
+                        try stdout.writeAll("\x07");
                     }
                 }
                 continue;
