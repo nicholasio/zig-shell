@@ -158,7 +158,6 @@ pub fn main() !void {
 
             buf_index += 1;
         }
-        // const command = try stdin.readUntilDelimiter(&buffer, '\n');
         const command = buffer[0..buf_index];
         var cmd = InputCommand.parse(allocator, command) catch InputCommand{ .name = "error", .args = undefined };
 

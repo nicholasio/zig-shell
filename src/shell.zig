@@ -114,8 +114,9 @@ pub const Shell = struct {
         var len: usize = 0;
         for (self.commands) |cmd| {
             if (std.mem.startsWith(u8, cmd.name, command)) {
-                len = cmd.name.len;
                 @memcpy(buffer[0..cmd.name.len], cmd.name);
+                buffer[cmd.name.len] = ' ';
+                len = cmd.name.len + 1;
                 break;
             }
         }
