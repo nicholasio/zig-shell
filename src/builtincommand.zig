@@ -9,9 +9,9 @@ pub const Result = struct {
 pub const BuiltInCommand = struct {
     name: []const u8,
     description: []const u8,
-    handler: *const fn (shell: *const Shell, input: *InputCommand) Result,
+    handler: *const fn (shell: *Shell, input: *InputCommand) Result,
 
-    pub fn execute(self: BuiltInCommand, shell: *const Shell, input: *InputCommand) !Result {
+    pub fn execute(self: BuiltInCommand, shell: *Shell, input: *InputCommand) !Result {
         return self.handler(shell, input);
     }
 };

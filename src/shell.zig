@@ -6,11 +6,14 @@ const InputCommand = Input.InputCommand;
 pub const Shell = struct {
     commands: []const BuiltInCommand,
     allocator: std.mem.Allocator,
+    running: bool = true,
+    exitCode: u8 = 0,
 
     pub fn init(allocator: std.mem.Allocator, commands: []const BuiltInCommand) Shell {
         return Shell{
             .allocator = allocator,
             .commands = commands,
+            .running = true,
         };
     }
 
@@ -24,6 +27,19 @@ pub const Shell = struct {
         const env_vars = try std.process.getEnvMap(self.allocator);
         const home_value = env_vars.get("HOME") orelse "";
         return home_value;
+    }
+
+    pub fn exit(self: *Shell, code: u8) !void {
+        self.exitCode = code;
+        self.running = false;
+    }
+
+    pub fn getExitCode(self: *const Shell) u8 {
+        return self.exitCode;
+    }
+
+    pub fn isRunning(self: *const Shell) bool {
+        return self.running;
     }
 
     pub fn isExecutable(self: *const Shell, command: []const u8) !struct { bool, []const u8 } {
@@ -94,7 +110,35 @@ pub const Shell = struct {
         }
     }
 
-    pub fn run(self: *const Shell, command: *InputCommand) !void {
+    pub fn handleTab(self: *Shell, command: []const u8, buffer: []u8) !usize {
+        var len: usize = 0;
+        for (self.commands) |cmd| {
+            if (std.mem.startsWith(u8, cmd.name, command)) {
+                len = cmd.name.len;
+                @memcpy(buffer[0..cmd.name.len], cmd.name);
+                break;
+            }
+        }
+
+        // if (!found) {
+        //     const path = try self.getPath();
+        //     var iter = std.mem.splitScalar(u8, path, ':');
+        //     while (iter.next()) |path_segment| {
+        //         const dir = try std.fs.cwd().openDir(path_segment, .{});
+        //         if (dir) |d| {
+        //             while (d.next()) |entry| {
+        //                 if (std.mem.eql(u8, command, entry.name)) {
+        //                     break;
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
+        return len;
+    }
+
+    pub fn run(self: *Shell, command: *InputCommand) !void {
         const stdout = std.io.getStdOut().writer();
 
         var found = false;

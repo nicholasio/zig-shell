@@ -5,18 +5,17 @@ const Shell = @import("shell.zig").Shell;
 const BuiltInCommand = @import("builtincommand.zig").BuiltInCommand;
 const Result = @import("builtincommand.zig").Result;
 
-fn exitHandler(shell: *const Shell, input: *InputCommand) Result {
-    _ = shell; // autofix
+fn exitHandler(shell: *Shell, input: *InputCommand) Result {
     const firstArgument = input.nextArg() orelse "0";
 
     const code = std.fmt.parseInt(u8, firstArgument, 10) catch 0;
 
-    std.process.exit(code);
+    shell.exit(code) catch {};
 
     return .{ .value = null, .isError = false };
 }
 
-fn echoHandler(shell: *const Shell, input: *InputCommand) Result {
+fn echoHandler(shell: *Shell, input: *InputCommand) Result {
     if (input.args.?.items.len == 0) {
         return .{ .value = null, .isError = false };
     }
@@ -38,7 +37,7 @@ fn echoHandler(shell: *const Shell, input: *InputCommand) Result {
     return .{ .value = echoed, .isError = false };
 }
 
-fn typeHandler(shell: *const Shell, input: *InputCommand) Result {
+fn typeHandler(shell: *Shell, input: *InputCommand) Result {
     const commandName = input.nextArg() orelse "";
 
     if (std.mem.eql(u8, commandName, "")) {
@@ -75,7 +74,7 @@ fn typeHandler(shell: *const Shell, input: *InputCommand) Result {
     return .{ .value = out, .isError = isError };
 }
 
-fn pwdHandler(shell: *const Shell, input: *InputCommand) Result {
+fn pwdHandler(shell: *Shell, input: *InputCommand) Result {
     _ = input; // autofix
 
     const cwd = std.fs.cwd().realpathAlloc(shell.allocator, ".") catch "";
@@ -83,7 +82,7 @@ fn pwdHandler(shell: *const Shell, input: *InputCommand) Result {
     return .{ .value = std.fmt.allocPrint(shell.allocator, "{s}\n", .{cwd}) catch null, .isError = false };
 }
 
-fn cdHandler(shell: *const Shell, input: *InputCommand) Result {
+fn cdHandler(shell: *Shell, input: *InputCommand) Result {
     var directory = input.nextArg() orelse "";
 
     if (std.mem.eql(u8, directory, "~")) {
@@ -125,13 +124,48 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const shell = Shell.init(allocator, &commands);
+    var shell = Shell.init(allocator, &commands);
 
-    while (true) {
+    try Input.setRawInput(true);
+
+    while (shell.isRunning()) {
         try stdout.print("$ ", .{});
-        const command = try stdin.readUntilDelimiter(&buffer, '\n');
+
+        var buf_index: usize = 0;
+
+        while (true) {
+            const c = try stdin.readByte();
+
+            if (c == '\t') {
+                if (buf_index > 0) {
+                    const len = try shell.handleTab(buffer[0..buf_index], &buffer);
+                    if (len > 0) {
+                        try stdout.print("{s}", .{buffer[buf_index..len]});
+                        buf_index = len;
+                    }
+                }
+                continue;
+            }
+
+            if (c == '\n') {
+                try stdout.print("\n", .{});
+                buffer[buf_index] = c;
+                break;
+            }
+
+            try stdout.print("{c}", .{c});
+            buffer[buf_index] = c;
+
+            buf_index += 1;
+        }
+        // const command = try stdin.readUntilDelimiter(&buffer, '\n');
+        const command = buffer[0..buf_index];
         var cmd = InputCommand.parse(allocator, command) catch InputCommand{ .name = "error", .args = undefined };
 
         try shell.run(&cmd);
     }
+
+    try Input.setRawInput(false);
+
+    std.process.exit(shell.getExitCode());
 }

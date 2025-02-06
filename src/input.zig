@@ -1,5 +1,63 @@
 const std = @import("std");
+const posix = std.posix;
+const builtin = @import("builtin");
+const windows = std.os.windows;
 const expect = std.testing.expect;
+
+// makes read return error.WouldBlock instead of blocking if no input is available
+// posix only
+pub fn setNonblock(b: bool) !void {
+    var flags: posix.O = @bitCast(@as(u32, @intCast(try posix.fcntl(posix.STDIN_FILENO, posix.F.GETFL, 0))));
+    flags.NONBLOCK = b;
+    _ = try posix.fcntl(posix.STDIN_FILENO, posix.F.SETFL, @as(u32, @bitCast(flags)));
+}
+
+// makes it so that no newline character is required for forwarding the input
+// also makes it so that input characters are not printed to the console
+pub fn setRawInput(b: bool) !void {
+    if (builtin.os.tag == .windows) {
+        const ENABLE_ECHO_INPUT: u32 = 0x0004;
+        const ENABLE_LINE_INPUT: u32 = 0x0002;
+
+        const handle = std.io.getStdIn().handle;
+        var flags: u32 = undefined;
+        if (windows.kernel32.GetConsoleMode(handle, &flags) == 0) return error.NotATerminal;
+        if (b) {
+            flags &= ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT);
+        } else {
+            flags |= ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT;
+        }
+
+        std.debug.assert(windows.kernel32.SetConsoleMode(handle, flags) != 0);
+    } else {
+        var t: posix.termios = try posix.tcgetattr(posix.STDIN_FILENO);
+
+        t.lflag.ECHO = !b;
+        t.lflag.ICANON = !b;
+        try posix.tcsetattr(posix.STDIN_FILENO, .NOW, t);
+    }
+}
+
+// returns true if there's input availabe to read
+pub fn isAvaiable() !bool {
+    if (builtin.os.tag == .windows) {
+        const func = @extern(*const fn (
+            hConsoleInput: windows.HANDLE,
+            lpcNumberOfEvents: *u32,
+        ) callconv(windows.WINAPI) c_int, .{ .name = "GetNumberOfConsoleInputEvents", .library_name = "kernel32" });
+
+        var res: u32 = undefined;
+        if (func(std.io.getStdIn().handle, &res) == 0) {
+            return error.NotATerminal;
+        }
+
+        return res != 0;
+    } else {
+        var fds: [1]posix.pollfd = .{.{ .events = posix.POLL.IN, .revents = 0, .fd = posix.STDIN_FILENO }};
+
+        return try posix.poll(fds[0..], 0) != 0;
+    }
+}
 
 const RedirectionType = enum {
     None,
