@@ -117,7 +117,10 @@ pub const Shell = struct {
 
     pub fn handleTab(self: *Shell, command: []const u8) !std.ArrayList([]const u8) {
         var options = try std.ArrayList([]const u8).initCapacity(self.allocator, 10);
+        var hashMap = std.StringHashMap(bool).init(self.allocator);
 
+        // TODO(nicholasio): use only hashmap
+        // TODO(nicholasio): improve performance
         for (self.commands) |cmd| {
             if (std.mem.startsWith(u8, cmd.name, command)) {
                 try options.append(cmd.name);
@@ -134,8 +137,10 @@ pub const Shell = struct {
                 var dirIter: ?std.fs.Dir.Walker = dir.walk(self.allocator) catch null;
 
                 while (dirIter.?.next() catch null) |entry| {
-                    if (std.mem.startsWith(u8, entry.basename, command)) {
-                        try options.append(entry.basename);
+                    const e = try self.allocator.dupe(u8, entry.basename);
+                    if (std.mem.startsWith(u8, e, command) and !hashMap.contains(e)) {
+                        try hashMap.put(e, true);
+                        try options.append(e);
                     }
                 }
             } else |_| {
