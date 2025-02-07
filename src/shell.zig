@@ -2,6 +2,11 @@ const std = @import("std");
 const BuiltInCommand = @import("builtincommand.zig").BuiltInCommand;
 const Input = @import("input.zig");
 const InputCommand = Input.InputCommand;
+const set = @import("ziglangSet");
+
+fn lessThan(_: @TypeOf(.{}), lhs: []const u8, rhs: []const u8) bool {
+    return std.mem.order(u8, lhs, rhs) == .lt;
+}
 
 pub const Shell = struct {
     commands: []const BuiltInCommand,
@@ -110,42 +115,39 @@ pub const Shell = struct {
         }
     }
 
-    pub fn handleTab(self: *Shell, command: []const u8, buffer: []u8) !usize {
-        var len: usize = 0;
+    pub fn handleTab(self: *Shell, command: []const u8) !std.ArrayList([]const u8) {
+        var options = try std.ArrayList([]const u8).initCapacity(self.allocator, 10);
+
         for (self.commands) |cmd| {
             if (std.mem.startsWith(u8, cmd.name, command)) {
-                @memcpy(buffer[0..cmd.name.len], cmd.name);
-                buffer[cmd.name.len] = ' ';
-                len = cmd.name.len + 1;
-                return len;
+                try options.append(cmd.name);
+                return options;
             }
         }
 
-        if (len == 0) {
-            const path = try self.getPath();
-            var iter = std.mem.splitScalar(u8, path, ':');
-            while (iter.next()) |path_segment| {
-                const _dir = std.fs.cwd().openDir(path_segment, .{ .iterate = true });
+        const path = try self.getPath();
+        var iter = std.mem.splitScalar(u8, path, ':');
+        while (iter.next()) |path_segment| {
+            const _dir = std.fs.cwd().openDir(path_segment, .{ .iterate = true });
 
-                if (_dir) |dir| {
-                    var dirIter = try dir.walk(self.allocator);
+            if (_dir) |dir| {
+                var dirIter: ?std.fs.Dir.Walker = dir.walk(self.allocator) catch null;
 
-                    while (try dirIter.next()) |entry| {
-                        if (std.mem.startsWith(u8, entry.basename, command)) {
-                            @memcpy(buffer[0..entry.basename.len], entry.basename);
-                            buffer[entry.basename.len] = ' ';
-                            len = entry.basename.len + 1;
-                            return len;
-                        }
+                while (dirIter.?.next() catch null) |entry| {
+                    if (std.mem.startsWith(u8, entry.basename, command)) {
+                        try options.append(entry.basename);
                     }
-                } else |_| {
-                    std.debug.print("Failed to open directory: {s}\n", .{path_segment});
-                    continue;
                 }
+            } else |_| {
+                continue;
             }
         }
 
-        return len;
+        // std.mem.sort(u32, self.array.items, {}, std.sort.asc(u32));
+
+        std.mem.sort([]const u8, options.items, .{}, lessThan);
+
+        return options;
     }
 
     pub fn run(self: *Shell, command: *InputCommand) !void {

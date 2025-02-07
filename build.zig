@@ -9,6 +9,9 @@ pub fn build(b: *std.Build) void {
         .optimize = b.standardOptimizeOption(.{}),
     });
 
+    const ziglangSet = b.dependency("ziglangSet", .{});
+    exe.root_module.addImport("ziglangSet", ziglangSet.module("ziglangSet"));
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).

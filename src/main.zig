@@ -138,15 +138,27 @@ pub fn main() !void {
 
             if (c == '\t') {
                 if (buf_index > 0) {
-                    const len = shell.handleTab(buffer[0..buf_index], &buffer) catch {
-                        continue;
-                    };
+                    const options = shell.handleTab(buffer[0..buf_index]) catch std.ArrayList([]const u8).init(allocator);
 
-                    if (len > 0) {
+                    if (options.items.len == 1) {
+                        const remainingCommand = options.items[0][buf_index..options.items[0].len];
+
+                        var len = buf_index + remainingCommand.len;
+                        @memcpy(buffer[buf_index..len], remainingCommand);
+                        buffer[len] = ' ';
+                        len += 1;
                         try stdout.print("{s}", .{buffer[buf_index..len]});
                         buf_index = len;
                     } else {
                         try stdout.writeAll("\x07");
+                        if (options.items.len > 1) {
+                            try stdout.print("\n", .{});
+
+                            for (options.items) |option| {
+                                try stdout.print("{s}  ", .{option});
+                            }
+                            try stdout.print("\n$ {s}", .{buffer[0..buf_index]});
+                        }
                     }
                 }
                 continue;
