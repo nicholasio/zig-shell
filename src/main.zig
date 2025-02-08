@@ -151,9 +151,30 @@ pub fn main() !void {
                         len += 1;
                         try stdout.print("{s}", .{buffer[buf_index..len]});
                         buf_index = len;
-                    } else {
-                        try stdout.writeAll("\x07");
-                        if (options.items.len > 1) {
+                    } else if (options.items.len > 1) {
+                        const first = options.items[0];
+                        var commonLen = first.len;
+
+                        for (options.items[0..]) |option| {
+                            var i: usize = 0;
+                            while (i < commonLen and i < option.len) : (i += 1) {
+                                if (first[i] != option[i]) {
+                                    commonLen = i;
+                                    break;
+                                }
+                            }
+                            commonLen = @min(commonLen, option.len);
+                        }
+
+                        if (commonLen > buf_index) {
+                            var i: usize = buf_index;
+                            while (i < commonLen) : (i += 1) {
+                                buffer[i] = first[i];
+                            }
+                            try stdout.print("{s}", .{buffer[buf_index..commonLen]});
+                            buf_index = commonLen;
+                        } else {
+                            try stdout.writeAll("\x07");
                             try stdout.print("\n", .{});
 
                             for (options.items) |option| {
@@ -161,6 +182,8 @@ pub fn main() !void {
                             }
                             try stdout.print("\n$ {s}", .{buffer[0..buf_index]});
                         }
+                    } else {
+                        try stdout.writeAll("\x07");
                     }
                 }
                 continue;
