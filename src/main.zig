@@ -128,6 +128,8 @@ pub fn main() !void {
 
     try Input.setRawInput(true);
 
+    // TODO(nicholas): handle backspace, cursor etc
+    // https://zig.news/lhp/want-to-create-a-tui-application-the-basics-of-uncooked-terminal-io-17gm
     while (shell.isRunning()) {
         try stdout.print("$ ", .{});
 
