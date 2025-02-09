@@ -3,6 +3,7 @@ const BuiltInCommand = @import("builtincommand.zig").BuiltInCommand;
 const Input = @import("input.zig");
 const InputCommand = Input.InputCommand;
 const set = @import("ziglangSet");
+const Buffer = @import("buffer.zig");
 
 fn lessThan(_: @TypeOf(.{}), lhs: []const u8, rhs: []const u8) bool {
     return std.mem.order(u8, lhs, rhs) == .lt;
@@ -13,13 +14,30 @@ pub const Shell = struct {
     allocator: std.mem.Allocator,
     running: bool = true,
     exitCode: u8 = 0,
+    cursorPosition: usize = 0,
+    buffer: Buffer,
 
     pub fn init(allocator: std.mem.Allocator, commands: []const BuiltInCommand) Shell {
         return Shell{
             .allocator = allocator,
             .commands = commands,
             .running = true,
+            .cursorPosition = 0,
+            .buffer = Buffer.init(),
         };
+    }
+
+    pub fn render(self: *Shell) !void {
+        const stdout = std.io.getStdOut().writer();
+
+        try stdout.print("\r\x1B[K", .{});
+        try stdout.print("$ {s}", .{self.buffer.getSlice()});
+        try self.renderCursor();
+    }
+
+    pub fn renderCursor(self: *const Shell) !void {
+        const stdout = std.io.getStdOut().writer();
+        try stdout.print("\r\x1B[{d}G", .{self.cursorPosition + 3});
     }
 
     pub fn getPath(self: Shell) ![]const u8 {

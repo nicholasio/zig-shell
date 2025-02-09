@@ -111,8 +111,6 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     const stdin = std.io.getStdIn().reader();
 
-    var buffer: [1024]u8 = undefined;
-
     const commands = [_]BuiltInCommand{
         BuiltInCommand{ .name = "exit", .description = "Exit shell", .handler = &exitHandler },
         BuiltInCommand{ .name = "echo", .description = "Echo the input", .handler = &echoHandler },
@@ -128,29 +126,55 @@ pub fn main() !void {
 
     try Input.setRawInput(true);
 
-    // TODO(nicholas): handle backspace, cursor etc
-    // https://zig.news/lhp/want-to-create-a-tui-application-the-basics-of-uncooked-terminal-io-17gm
     while (shell.isRunning()) {
         try stdout.print("$ ", .{});
-
-        var buf_index: usize = 0;
+        shell.buffer.reset();
+        shell.cursorPosition = 0;
 
         while (true) {
             const c = try stdin.readByte();
 
+            if (c == 8 or c == 127) {
+                if (shell.cursorPosition > 0) {
+                    shell.buffer.removeChar(shell.cursorPosition - 1);
+                    shell.cursorPosition -= 1;
+
+                    try shell.render();
+                }
+
+                continue;
+            }
+            if (c == '\x1B') {
+                var esc_buffer: [8]u8 = undefined;
+                const esc_read = try stdin.read(&esc_buffer);
+
+                if (std.mem.eql(u8, esc_buffer[0..esc_read], "[D")) {
+                    if (shell.cursorPosition > 0) {
+                        shell.cursorPosition -= 1;
+                    }
+                } else if (std.mem.eql(u8, esc_buffer[0..esc_read], "[C")) {
+                    if (shell.cursorPosition < shell.buffer.len) {
+                        shell.cursorPosition += 1;
+                    }
+                } else {
+                    std.debug.print("input: unknown escape sequence: {s}\r\n", .{esc_buffer[0..esc_read]});
+                }
+
+                try shell.renderCursor();
+
+                continue;
+            }
+
             if (c == '\t') {
-                if (buf_index > 0) {
-                    const options = shell.handleTab(buffer[0..buf_index]) catch std.ArrayList([]const u8).init(allocator);
+                if (shell.buffer.len > 0) {
+                    const options = shell.handleTab(shell.buffer.getSlice()) catch std.ArrayList([]const u8).init(allocator);
 
                     if (options.items.len == 1) {
-                        const remainingCommand = options.items[0][buf_index..options.items[0].len];
-
-                        var len = buf_index + remainingCommand.len;
-                        @memcpy(buffer[buf_index..len], remainingCommand);
-                        buffer[len] = ' ';
-                        len += 1;
-                        try stdout.print("{s}", .{buffer[buf_index..len]});
-                        buf_index = len;
+                        const remainingCommand = options.items[0][shell.buffer.len..options.items[0].len];
+                        shell.buffer.appendSlice(remainingCommand);
+                        shell.buffer.append(' ');
+                        shell.cursorPosition = shell.buffer.len;
+                        try stdout.print("{s} ", .{remainingCommand});
                     } else if (options.items.len > 1) {
                         const first = options.items[0];
                         var commonLen = first.len;
@@ -166,13 +190,11 @@ pub fn main() !void {
                             commonLen = @min(commonLen, option.len);
                         }
 
-                        if (commonLen > buf_index) {
-                            var i: usize = buf_index;
-                            while (i < commonLen) : (i += 1) {
-                                buffer[i] = first[i];
-                            }
-                            try stdout.print("{s}", .{buffer[buf_index..commonLen]});
-                            buf_index = commonLen;
+                        if (commonLen > shell.buffer.len) {
+                            const completion = first[shell.buffer.len..commonLen];
+                            shell.buffer.appendSlice(completion);
+                            shell.cursorPosition = shell.buffer.len;
+                            try stdout.print("{s}", .{completion});
                         } else {
                             try stdout.writeAll("\x07");
                             try stdout.print("\n", .{});
@@ -180,7 +202,7 @@ pub fn main() !void {
                             for (options.items) |option| {
                                 try stdout.print("{s}  ", .{option});
                             }
-                            try stdout.print("\n$ {s}", .{buffer[0..buf_index]});
+                            try stdout.print("\n$ {s}", .{shell.buffer.getSlice()});
                         }
                     } else {
                         try stdout.writeAll("\x07");
@@ -191,16 +213,15 @@ pub fn main() !void {
 
             if (c == '\n') {
                 try stdout.print("\n", .{});
-                buffer[buf_index] = c;
                 break;
             }
 
-            try stdout.print("{c}", .{c});
-            buffer[buf_index] = c;
+            shell.buffer.putChar(c, shell.cursorPosition);
+            shell.cursorPosition += 1;
 
-            buf_index += 1;
+            try shell.render();
         }
-        const command = buffer[0..buf_index];
+        const command = shell.buffer.getSlice();
         var cmd = InputCommand.parse(allocator, command) catch InputCommand{ .name = "error", .args = undefined };
 
         try shell.run(&cmd);
