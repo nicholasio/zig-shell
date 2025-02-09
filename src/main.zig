@@ -134,7 +134,7 @@ pub fn main() !void {
         while (true) {
             const c = try stdin.readByte();
 
-            if (c == 8 or c == 127) {
+            if (c == 8 or c == 127) { // BACKSPACE
                 if (shell.cursorPosition > 0) {
                     shell.buffer.removeChar(shell.cursorPosition - 1);
                     shell.cursorPosition -= 1;
@@ -155,6 +155,12 @@ pub fn main() !void {
                 } else if (std.mem.eql(u8, esc_buffer[0..esc_read], "[C")) {
                     if (shell.cursorPosition < shell.buffer.len) {
                         shell.cursorPosition += 1;
+                    }
+                } else if (std.mem.eql(u8, esc_buffer[0..esc_read], "[3~")) { // DEL
+                    if (shell.cursorPosition < shell.buffer.len) {
+                        shell.buffer.removeChar(shell.cursorPosition);
+
+                        try shell.render();
                     }
                 } else {
                     std.debug.print("input: unknown escape sequence: {s}\r\n", .{esc_buffer[0..esc_read]});
