@@ -16,6 +16,8 @@ pub const Shell = struct {
     exitCode: u8 = 0,
     cursorPosition: usize = 0,
     buffer: Buffer,
+    stdout: std.fs.File.Writer,
+    stdin: std.fs.File.Reader,
 
     pub fn init(allocator: std.mem.Allocator, commands: []const BuiltInCommand) Shell {
         return Shell{
@@ -24,20 +26,19 @@ pub const Shell = struct {
             .running = true,
             .cursorPosition = 0,
             .buffer = Buffer.init(),
+            .stdout = std.io.getStdOut().writer(),
+            .stdin = std.io.getStdIn().reader(),
         };
     }
 
     pub fn render(self: *Shell) !void {
-        const stdout = std.io.getStdOut().writer();
-
-        try stdout.print("\r\x1B[K", .{});
-        try stdout.print("$ {s}", .{self.buffer.getSlice()});
+        try self.stdout.print("\r\x1B[K", .{});
+        try self.stdout.print("$ {s}", .{self.buffer.getSlice()});
         try self.renderCursor();
     }
 
     pub fn renderCursor(self: *const Shell) !void {
-        const stdout = std.io.getStdOut().writer();
-        try stdout.print("\r\x1B[{d}G", .{self.cursorPosition + 3});
+        try self.stdout.print("\r\x1B[{d}G", .{self.cursorPosition + 3});
     }
 
     pub fn getPath(self: Shell) ![]const u8 {
@@ -80,8 +81,6 @@ pub const Shell = struct {
     }
 
     fn handleStdout(self: *const Shell, result: ?[]const u8, command: *InputCommand) !void {
-        _ = self; // autofix
-        const stdout = std.io.getStdOut().writer();
         if (result) |value| {
             if (command.nextArg()) |arg| {
                 if (Input.isStdoutRedirection(arg)) {
@@ -96,18 +95,15 @@ pub const Shell = struct {
                     try writer.print("{s}", .{value});
                 } else {
                     command.rewindOneArg();
-                    stdout.print("{s}", .{value}) catch {};
+                    self.stdout.print("{s}", .{value}) catch {};
                 }
             } else {
-                stdout.print("{s}", .{value}) catch {};
+                self.stdout.print("{s}", .{value}) catch {};
             }
         }
     }
 
     fn handleStderr(self: *const Shell, result: ?[]const u8, command: *InputCommand) !void {
-        _ = self; // autofix
-        const stdout = std.io.getStdOut().writer();
-
         if (command.nextArg()) |arg| {
             if (Input.isStderrRedirection(arg)) {
                 const file = command.nextArg() orelse "";
@@ -129,7 +125,7 @@ pub const Shell = struct {
         }
 
         if (result) |value| {
-            stdout.print("{s}", .{value}) catch {};
+            self.stdout.print("{s}", .{value}) catch {};
         }
     }
 
@@ -166,16 +162,119 @@ pub const Shell = struct {
             }
         }
 
-        // std.mem.sort(u32, self.array.items, {}, std.sort.asc(u32));
-
         std.mem.sort([]const u8, options.items, .{}, lessThan);
 
         return options;
     }
 
-    pub fn run(self: *Shell, command: *InputCommand) !void {
-        const stdout = std.io.getStdOut().writer();
+    pub fn prepare(self: *Shell) !void {
+        try self.stdout.print("$ ", .{});
+        self.buffer.reset();
+        self.cursorPosition = 0;
+    }
 
+    pub fn readInput(self: *Shell) !InputCommand {
+        while (true) {
+            const c = try self.stdin.readByte();
+
+            if (c == 8 or c == 127) { // BACKSPACE
+                if (self.cursorPosition > 0) {
+                    self.buffer.removeChar(self.cursorPosition - 1);
+                    self.cursorPosition -= 1;
+
+                    try self.render();
+                }
+
+                continue;
+            }
+            if (c == '\x1B') {
+                var esc_buffer: [8]u8 = undefined;
+                const esc_read = try self.stdin.read(&esc_buffer);
+
+                if (std.mem.eql(u8, esc_buffer[0..esc_read], "[D")) {
+                    if (self.cursorPosition > 0) {
+                        self.cursorPosition -= 1;
+                    }
+                } else if (std.mem.eql(u8, esc_buffer[0..esc_read], "[C")) {
+                    if (self.cursorPosition < self.buffer.len) {
+                        self.cursorPosition += 1;
+                    }
+                } else if (std.mem.eql(u8, esc_buffer[0..esc_read], "[3~")) { // DEL
+                    if (self.cursorPosition < self.buffer.len) {
+                        self.buffer.removeChar(self.cursorPosition);
+
+                        try self.render();
+                    }
+                } else {
+                    std.debug.print("input: unknown escape sequence: {s}\r\n", .{esc_buffer[0..esc_read]});
+                }
+
+                try self.renderCursor();
+
+                continue;
+            }
+
+            if (c == '\t') {
+                if (self.buffer.len > 0) {
+                    const options = self.handleTab(self.buffer.getSlice()) catch std.ArrayList([]const u8).init(self.allocator);
+
+                    if (options.items.len == 1) {
+                        const remainingCommand = options.items[0][self.buffer.len..options.items[0].len];
+                        self.buffer.appendSlice(remainingCommand);
+                        self.buffer.append(' ');
+                        self.cursorPosition = self.buffer.len;
+                        try self.stdout.print("{s} ", .{remainingCommand});
+                    } else if (options.items.len > 1) {
+                        const first = options.items[0];
+                        var commonLen = first.len;
+
+                        for (options.items[0..]) |option| {
+                            var i: usize = 0;
+                            while (i < commonLen and i < option.len) : (i += 1) {
+                                if (first[i] != option[i]) {
+                                    commonLen = i;
+                                    break;
+                                }
+                            }
+                            commonLen = @min(commonLen, option.len);
+                        }
+
+                        if (commonLen > self.buffer.len) {
+                            const completion = first[self.buffer.len..commonLen];
+                            self.buffer.appendSlice(completion);
+                            self.cursorPosition = self.buffer.len;
+                            try self.stdout.print("{s}", .{completion});
+                        } else {
+                            try self.stdout.writeAll("\x07");
+                            try self.stdout.print("\n", .{});
+
+                            for (options.items) |option| {
+                                try self.stdout.print("{s}  ", .{option});
+                            }
+                            try self.stdout.print("\n$ {s}", .{self.buffer.getSlice()});
+                        }
+                    } else {
+                        try self.stdout.writeAll("\x07");
+                    }
+                }
+                continue;
+            }
+
+            if (c == '\n') {
+                try self.stdout.print("\n", .{});
+                break;
+            }
+
+            self.buffer.putChar(c, self.cursorPosition);
+            self.cursorPosition += 1;
+
+            try self.render();
+        }
+
+        return InputCommand.parse(self.allocator, self.buffer.getSlice()) catch InputCommand{ .name = "error", .args = undefined };
+    }
+
+    pub fn run(self: *Shell, command: *InputCommand) !void {
         var found = false;
         for (self.commands) |cmd| {
             if (std.mem.eql(u8, command.name, cmd.name)) {
@@ -225,8 +324,7 @@ pub const Shell = struct {
         }
 
         if (!found) {
-            // print the error message
-            try stdout.print("{s}: command not found \n", .{command.name});
+            try self.stdout.print("{s}: command not found \n", .{command.name});
         }
     }
 };

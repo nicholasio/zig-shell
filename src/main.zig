@@ -108,9 +108,6 @@ fn cdHandler(shell: *Shell, input: *InputCommand) Result {
 }
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    const stdin = std.io.getStdIn().reader();
-
     const commands = [_]BuiltInCommand{
         BuiltInCommand{ .name = "exit", .description = "Exit shell", .handler = &exitHandler },
         BuiltInCommand{ .name = "echo", .description = "Echo the input", .handler = &echoHandler },
@@ -127,110 +124,11 @@ pub fn main() !void {
     try Input.setRawInput(true);
 
     while (shell.isRunning()) {
-        try stdout.print("$ ", .{});
-        shell.buffer.reset();
-        shell.cursorPosition = 0;
+        try shell.prepare();
 
-        while (true) {
-            const c = try stdin.readByte();
+        var input = try shell.readInput();
 
-            if (c == 8 or c == 127) { // BACKSPACE
-                if (shell.cursorPosition > 0) {
-                    shell.buffer.removeChar(shell.cursorPosition - 1);
-                    shell.cursorPosition -= 1;
-
-                    try shell.render();
-                }
-
-                continue;
-            }
-            if (c == '\x1B') {
-                var esc_buffer: [8]u8 = undefined;
-                const esc_read = try stdin.read(&esc_buffer);
-
-                if (std.mem.eql(u8, esc_buffer[0..esc_read], "[D")) {
-                    if (shell.cursorPosition > 0) {
-                        shell.cursorPosition -= 1;
-                    }
-                } else if (std.mem.eql(u8, esc_buffer[0..esc_read], "[C")) {
-                    if (shell.cursorPosition < shell.buffer.len) {
-                        shell.cursorPosition += 1;
-                    }
-                } else if (std.mem.eql(u8, esc_buffer[0..esc_read], "[3~")) { // DEL
-                    if (shell.cursorPosition < shell.buffer.len) {
-                        shell.buffer.removeChar(shell.cursorPosition);
-
-                        try shell.render();
-                    }
-                } else {
-                    std.debug.print("input: unknown escape sequence: {s}\r\n", .{esc_buffer[0..esc_read]});
-                }
-
-                try shell.renderCursor();
-
-                continue;
-            }
-
-            if (c == '\t') {
-                if (shell.buffer.len > 0) {
-                    const options = shell.handleTab(shell.buffer.getSlice()) catch std.ArrayList([]const u8).init(allocator);
-
-                    if (options.items.len == 1) {
-                        const remainingCommand = options.items[0][shell.buffer.len..options.items[0].len];
-                        shell.buffer.appendSlice(remainingCommand);
-                        shell.buffer.append(' ');
-                        shell.cursorPosition = shell.buffer.len;
-                        try stdout.print("{s} ", .{remainingCommand});
-                    } else if (options.items.len > 1) {
-                        const first = options.items[0];
-                        var commonLen = first.len;
-
-                        for (options.items[0..]) |option| {
-                            var i: usize = 0;
-                            while (i < commonLen and i < option.len) : (i += 1) {
-                                if (first[i] != option[i]) {
-                                    commonLen = i;
-                                    break;
-                                }
-                            }
-                            commonLen = @min(commonLen, option.len);
-                        }
-
-                        if (commonLen > shell.buffer.len) {
-                            const completion = first[shell.buffer.len..commonLen];
-                            shell.buffer.appendSlice(completion);
-                            shell.cursorPosition = shell.buffer.len;
-                            try stdout.print("{s}", .{completion});
-                        } else {
-                            try stdout.writeAll("\x07");
-                            try stdout.print("\n", .{});
-
-                            for (options.items) |option| {
-                                try stdout.print("{s}  ", .{option});
-                            }
-                            try stdout.print("\n$ {s}", .{shell.buffer.getSlice()});
-                        }
-                    } else {
-                        try stdout.writeAll("\x07");
-                    }
-                }
-                continue;
-            }
-
-            if (c == '\n') {
-                try stdout.print("\n", .{});
-                break;
-            }
-
-            shell.buffer.putChar(c, shell.cursorPosition);
-            shell.cursorPosition += 1;
-
-            try shell.render();
-        }
-        const command = shell.buffer.getSlice();
-        var cmd = InputCommand.parse(allocator, command) catch InputCommand{ .name = "error", .args = undefined };
-
-        try shell.run(&cmd);
+        try shell.run(&input);
     }
 
     try Input.setRawInput(false);
